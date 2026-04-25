@@ -1,7 +1,7 @@
 'use client';
 import { useState, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import { Play, Clock } from 'lucide-react';
+import { Play, Clock, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
 
@@ -17,17 +17,18 @@ interface QueryResult {
 }
 
 export default function SqlEditor({ db }: Props) {
-  const [sql, setSql] = useState(db ? `USE \`${db}\`;\n\nSELECT * FROM ` : 'SELECT 1;');
+  const [sql, setSql] = useState(db ? `SELECT * FROM ` : 'SELECT 1;');
   const [result, setResult] = useState<QueryResult | null>(null);
   const [running, setRunning] = useState(false);
   const editorRef = useRef<unknown>(null);
 
   async function runQuery() {
-    const selected = (editorRef.current as { getSelection: () => unknown; getModel: () => { getValueInRange: (s: unknown) => string } } | null)
-      ?.getModel()?.getValueInRange(
-        (editorRef.current as { getSelection: () => unknown })?.getSelection()
-      );
-    const toRun = (selected?.trim() || sql).trim();
+    const editor = editorRef.current as {
+      getSelection: () => unknown;
+      getModel: () => { getValueInRange: (s: unknown) => string } | null;
+    } | null;
+    const selected = editor?.getModel()?.getValueInRange(editor?.getSelection())?.trim();
+    const toRun = (selected || sql).trim();
     if (!toRun) return;
 
     setRunning(true);
@@ -37,74 +38,94 @@ export default function SqlEditor({ db }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sql: toRun, db }),
       });
-      const d = await r.json();
-      setResult(d);
+      setResult(await r.json());
     } finally { setRunning(false); }
   }
 
   const columns = result?.rows?.length ? Object.keys(result.rows[0]) : [];
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-gray-50 shrink-0">
-        {db && <span className="text-xs text-gray-500 font-mono bg-gray-200 px-2 py-0.5 rounded">{db}</span>}
+    <div className="flex flex-col h-full bg-[#09090b]">
+      {/* Toolbar */}
+      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-zinc-800 shrink-0 bg-zinc-900/50">
+        {db && (
+          <span className="text-xs font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-1 rounded-md">
+            {db}
+          </span>
+        )}
         <button
           onClick={runQuery}
           disabled={running}
-          className="flex items-center gap-1.5 bg-green-600 text-white text-sm px-3 py-1 rounded hover:bg-green-700 disabled:opacity-50"
+          className="flex items-center gap-1.5 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
         >
           <Play className="w-3.5 h-3.5" />
-          {running ? 'Running…' : 'Run (Ctrl+Enter)'}
+          {running ? 'Running…' : 'Run'}
         </button>
-        <span className="text-xs text-gray-400">Select text to run a partial query</span>
+        <span className="text-xs text-zinc-600">Ctrl+Enter to run · select text to run partial query</span>
       </div>
 
-      <div className="h-48 border-b border-gray-200 shrink-0">
+      {/* Editor */}
+      <div className="h-52 border-b border-zinc-800 shrink-0">
         <MonacoEditor
           language="sql"
           value={sql}
           onChange={v => setSql(v || '')}
-          onMount={(editor) => {
+          onMount={editor => {
             editorRef.current = editor;
-            editor.addCommand(2048 | 3, runQuery); // Ctrl+Enter
+            editor.addCommand(2048 | 3, runQuery);
           }}
+          theme="vs-dark"
           options={{
             minimap: { enabled: false },
             fontSize: 13,
+            lineHeight: 22,
+            fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
+            fontLigatures: true,
             lineNumbers: 'on',
             scrollBeyondLastLine: false,
             wordWrap: 'on',
             tabSize: 2,
+            renderLineHighlight: 'line',
+            cursorBlinking: 'smooth',
+            smoothScrolling: true,
+            padding: { top: 12, bottom: 12 },
           }}
-          theme="vs"
         />
       </div>
 
+      {/* Results */}
       <div className="flex-1 overflow-auto">
         {result?.error && (
-          <div className="p-4 text-red-600 text-sm bg-red-50">{result.error}</div>
+          <div className="m-4 flex items-start gap-2.5 p-3.5 text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl text-sm">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span className="font-mono text-xs">{result.error}</span>
+          </div>
         )}
 
         {result && !result.error && result.type === 'write' && (
-          <div className="p-4 text-sm text-green-700 bg-green-50 flex items-center gap-2">
-            <Clock className="w-4 h-4" />
-            {result.affectedRows} row(s) affected
-            {result.insertId ? `, insert ID: ${result.insertId}` : ''}
-            {` · ${result.elapsed}ms`}
+          <div className="m-4 flex items-center gap-2.5 p-3.5 text-green-400 bg-green-500/10 border border-green-500/20 rounded-xl text-sm">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>
+              {result.affectedRows} row{result.affectedRows !== 1 ? 's' : ''} affected
+              {result.insertId ? ` · insert ID: ${result.insertId}` : ''}
+              <span className="text-zinc-500 ml-2 flex items-center gap-1 inline-flex">
+                <Clock className="w-3 h-3" />{result.elapsed}ms
+              </span>
+            </span>
           </div>
         )}
 
         {result?.rows && columns.length > 0 && (
           <div>
-            <div className="px-3 py-1.5 text-xs text-gray-500 bg-gray-50 border-b flex gap-3">
-              <span>{result.rows.length} rows</span>
+            <div className="flex items-center gap-3 px-4 py-2 text-xs text-zinc-500 border-b border-zinc-800">
+              <span className="text-zinc-300 font-medium">{result.rows.length.toLocaleString()} rows</span>
               <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{result.elapsed}ms</span>
             </div>
             <table className="min-w-full text-xs border-collapse">
-              <thead className="sticky top-0 bg-gray-100">
-                <tr>
+              <thead className="sticky top-0 bg-zinc-900 z-10">
+                <tr className="border-b border-zinc-800">
                   {columns.map(c => (
-                    <th key={c} className="px-3 py-2 text-left border-b border-gray-200 font-medium text-gray-700 whitespace-nowrap">
+                    <th key={c} className="px-3 py-2.5 text-left font-medium text-zinc-400 whitespace-nowrap">
                       {c}
                     </th>
                   ))}
@@ -112,12 +133,12 @@ export default function SqlEditor({ db }: Props) {
               </thead>
               <tbody>
                 {result.rows.map((row, i) => (
-                  <tr key={i} className="hover:bg-blue-50 border-b border-gray-100">
+                  <tr key={i} className="border-b border-zinc-800/60 hover:bg-zinc-800/40 transition-colors">
                     {columns.map(c => (
-                      <td key={c} className="px-3 py-1 text-gray-800 max-w-xs truncate">
+                      <td key={c} className="px-3 py-2 max-w-xs">
                         {row[c] === null
-                          ? <span className="text-gray-400 italic">NULL</span>
-                          : String(row[c])}
+                          ? <span className="text-zinc-600 italic">NULL</span>
+                          : <span className="text-zinc-200 truncate block font-mono">{String(row[c])}</span>}
                       </td>
                     ))}
                   </tr>
@@ -128,7 +149,7 @@ export default function SqlEditor({ db }: Props) {
         )}
 
         {result?.rows && columns.length === 0 && (
-          <div className="p-4 text-sm text-gray-500">Query returned no columns.</div>
+          <div className="m-4 p-3 text-zinc-500 text-sm">Query returned no columns.</div>
         )}
       </div>
     </div>

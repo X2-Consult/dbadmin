@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { Pencil, Trash2, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Pencil, Trash2, Plus, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import RowEditor from './RowEditor';
 
 interface Props { db: string; table: string; }
@@ -10,7 +10,7 @@ export default function TableBrowser({ db, table }: Props) {
   const [columns, setColumns] = useState<string[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(50);
+  const pageSize = 50;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [editRow, setEditRow] = useState<Record<string, unknown> | null>(null);
@@ -32,10 +32,7 @@ export default function TableBrowser({ db, table }: Props) {
     } finally { setLoading(false); }
   }, [db, table, page, pageSize]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [db, table]);
-
+  useEffect(() => { setPage(1); }, [db, table]);
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
@@ -52,10 +49,9 @@ export default function TableBrowser({ db, table }: Props) {
 
   async function deleteRow(row: Record<string, unknown>) {
     if (!confirm('Delete this row?')) return;
-    const pk = pkOf(row);
     await fetch(
       `/api/databases/${encodeURIComponent(db)}/tables/${encodeURIComponent(table)}`,
-      { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pk) }
+      { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pkOf(row)) }
     );
     load();
   }
@@ -63,32 +59,45 @@ export default function TableBrowser({ db, table }: Props) {
   const totalPages = Math.ceil(total / pageSize);
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-gray-50 shrink-0">
-        <div className="text-sm text-gray-600">
-          {total.toLocaleString()} rows
-          {totalPages > 1 && ` · page ${page}/${totalPages}`}
+    <div className="flex flex-col h-full bg-[#09090b]">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-800 shrink-0">
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-zinc-500 tabular-nums">
+            {total.toLocaleString()} rows
+            {totalPages > 1 && <span className="text-zinc-600"> · page {page}/{totalPages}</span>}
+          </span>
         </div>
-        <button
-          onClick={() => setInserting(true)}
-          className="flex items-center gap-1 text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
-        >
-          <Plus className="w-3.5 h-3.5" /> Insert Row
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={load} disabled={loading}
+            className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors disabled:opacity-40">
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <button onClick={() => setInserting(true)}
+            className="flex items-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg transition-colors font-medium">
+            <Plus className="w-3.5 h-3.5" /> Insert Row
+          </button>
+        </div>
       </div>
 
-      {error && <div className="p-3 text-red-600 text-sm bg-red-50">{error}</div>}
+      {error && (
+        <div className="mx-4 mt-3 p-3 text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg text-sm">{error}</div>
+      )}
 
+      {/* Table */}
       <div className="flex-1 overflow-auto">
-        {loading ? (
-          <div className="p-6 text-gray-400 text-sm">Loading…</div>
+        {loading && rows.length === 0 ? (
+          <div className="flex items-center justify-center h-32 text-zinc-600 text-sm gap-2">
+            <div className="w-4 h-4 border border-zinc-700 border-t-zinc-400 rounded-full animate-spin" />
+            Loading…
+          </div>
         ) : (
           <table className="min-w-full text-xs border-collapse">
-            <thead className="sticky top-0 bg-gray-100 z-10">
-              <tr>
-                <th className="w-16 px-2 py-2 border-b border-gray-200 text-gray-500" />
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-zinc-900 border-b border-zinc-800">
+                <th className="w-12 px-3 py-2.5" />
                 {columns.map(c => (
-                  <th key={c} className="px-3 py-2 text-left border-b border-gray-200 font-medium text-gray-700 whitespace-nowrap">
+                  <th key={c} className="px-3 py-2.5 text-left font-medium text-zinc-400 whitespace-nowrap">
                     {c}
                   </th>
                 ))}
@@ -96,22 +105,24 @@ export default function TableBrowser({ db, table }: Props) {
             </thead>
             <tbody>
               {rows.map((row, i) => (
-                <tr key={i} className="hover:bg-blue-50 group border-b border-gray-100">
-                  <td className="px-2 py-1 text-gray-400 whitespace-nowrap">
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-                      <button onClick={() => setEditRow(row)} className="p-0.5 hover:text-blue-600">
+                <tr key={i} className="border-b border-zinc-800/60 hover:bg-zinc-800/40 group transition-colors">
+                  <td className="px-3 py-2">
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => setEditRow(row)}
+                        className="p-1 rounded text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 transition-colors">
                         <Pencil className="w-3 h-3" />
                       </button>
-                      <button onClick={() => deleteRow(row)} className="p-0.5 hover:text-red-600">
+                      <button onClick={() => deleteRow(row)}
+                        className="p-1 rounded text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors">
                         <Trash2 className="w-3 h-3" />
                       </button>
                     </div>
                   </td>
                   {columns.map(c => (
-                    <td key={c} className="px-3 py-1 text-gray-800 max-w-xs truncate">
+                    <td key={c} className="px-3 py-2 max-w-xs">
                       {row[c] === null
-                        ? <span className="text-gray-400 italic">NULL</span>
-                        : String(row[c])}
+                        ? <span className="text-zinc-600 italic font-normal">NULL</span>
+                        : <span className="text-zinc-200 truncate block">{String(row[c])}</span>}
                     </td>
                   ))}
                 </tr>
@@ -121,27 +132,29 @@ export default function TableBrowser({ db, table }: Props) {
         )}
       </div>
 
+      {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center gap-2 px-4 py-2 border-t border-gray-200 bg-gray-50 shrink-0">
-          <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}
-            className="p-1 rounded hover:bg-gray-200 disabled:opacity-30">
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <span className="text-sm text-gray-600">{page} / {totalPages}</span>
-          <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}
-            className="p-1 rounded hover:bg-gray-200 disabled:opacity-30">
-            <ChevronRight className="w-4 h-4" />
-          </button>
+        <div className="flex items-center justify-between px-4 py-2.5 border-t border-zinc-800 bg-zinc-900/50 shrink-0">
+          <span className="text-xs text-zinc-500 tabular-nums">
+            {((page - 1) * pageSize + 1).toLocaleString()}–{Math.min(page * pageSize, total).toLocaleString()} of {total.toLocaleString()}
+          </span>
+          <div className="flex items-center gap-1">
+            <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}
+              className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 disabled:opacity-30 transition-colors">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-xs text-zinc-400 tabular-nums px-2">{page} / {totalPages}</span>
+            <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}
+              className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 disabled:opacity-30 transition-colors">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 
       {(editRow || inserting) && (
         <RowEditor
-          db={db}
-          table={table}
-          row={editRow}
-          structure={structure}
-          pkColumns={pkColumns}
+          db={db} table={table} row={editRow} structure={structure} pkColumns={pkColumns}
           onClose={() => { setEditRow(null); setInserting(false); }}
           onSaved={() => { setEditRow(null); setInserting(false); load(); }}
         />

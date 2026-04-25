@@ -1,10 +1,17 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Trash2, Plus, X } from 'lucide-react';
+import { Trash2, Plus, X, ShieldCheck, ShieldAlert, User } from 'lucide-react';
 
 interface DbUser {
   User: string; Host: string; plugin: string; password_expired: string; account_locked: string;
 }
+
+const FORM_FIELDS = [
+  { key: 'user',     label: 'Username',                  type: 'text'     },
+  { key: 'host',     label: 'Host (% = any)',             type: 'text'     },
+  { key: 'password', label: 'Password',                   type: 'password' },
+  { key: 'grants',   label: 'Privileges (e.g. ALL PRIVILEGES)', type: 'text' },
+] as const;
 
 export default function UserManager() {
   const [users, setUsers] = useState<DbUser[]>([]);
@@ -29,8 +36,7 @@ export default function UserManager() {
   async function deleteUser(user: string, host: string) {
     if (!confirm(`Drop user '${user}'@'${host}'?`)) return;
     await fetch('/api/users', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user, host }),
     });
     load();
@@ -40,14 +46,8 @@ export default function UserManager() {
     setSaving(true);
     setSaveError('');
     const r = await fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        user: form.user,
-        host: form.host,
-        password: form.password,
-        grants: form.grants ? [form.grants] : [],
-      }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: form.user, host: form.host, password: form.password, grants: form.grants ? [form.grants] : [] }),
     });
     const d = await r.json();
     if (d.error) { setSaveError(d.error); setSaving(false); return; }
@@ -58,81 +58,108 @@ export default function UserManager() {
   }
 
   return (
-    <div className="p-6 max-w-3xl">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-gray-800">Users</h2>
-        <button onClick={() => setCreating(true)}
-          className="flex items-center gap-1.5 bg-blue-600 text-white text-sm px-3 py-1.5 rounded hover:bg-blue-700">
-          <Plus className="w-4 h-4" /> Create User
-        </button>
+    <div className="overflow-auto p-6 bg-[#09090b] min-h-full">
+      <div className="max-w-3xl space-y-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-white">Users</h2>
+            <p className="text-xs text-zinc-500 mt-0.5">Manage MariaDB user accounts</p>
+          </div>
+          <button onClick={() => setCreating(true)}
+            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors">
+            <Plus className="w-3.5 h-3.5" /> Create User
+          </button>
+        </div>
+
+        {error && (
+          <div className="p-3 text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl text-sm">{error}</div>
+        )}
+
+        {loading ? (
+          <div className="flex items-center gap-2 text-zinc-600 text-sm py-8 justify-center">
+            <div className="w-4 h-4 border border-zinc-700 border-t-zinc-400 rounded-full animate-spin" />
+            Loading…
+          </div>
+        ) : (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-zinc-800">
+                  {['User', 'Host', 'Plugin', 'Pwd Expired', 'Locked', ''].map(h => (
+                    <th key={h} className="px-4 py-3 text-left font-medium text-zinc-500">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u, i) => (
+                  <tr key={i} className="border-b border-zinc-800/60 last:border-0 hover:bg-zinc-800/40 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center">
+                          <User className="w-3 h-3 text-zinc-400" />
+                        </div>
+                        <span className="font-mono text-zinc-200 font-medium">{u.User || <span className="italic text-zinc-500">anonymous</span>}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-zinc-400">{u.Host}</td>
+                    <td className="px-4 py-3 text-zinc-500">{u.plugin}</td>
+                    <td className="px-4 py-3">
+                      {u.password_expired === 'Y'
+                        ? <span className="flex items-center gap-1 text-amber-400"><ShieldAlert className="w-3 h-3" />Yes</span>
+                        : <span className="text-zinc-600">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {u.account_locked === 'Y'
+                        ? <span className="flex items-center gap-1 text-red-400"><ShieldAlert className="w-3 h-3" />Locked</span>
+                        : <span className="flex items-center gap-1 text-green-500"><ShieldCheck className="w-3 h-3" />Active</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => deleteUser(u.User, u.Host)}
+                        className="p-1 rounded text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {error && <div className="mb-4 p-3 text-red-600 bg-red-50 rounded text-sm">{error}</div>}
-
-      {loading ? <div className="text-gray-400 text-sm">Loading…</div> : (
-        <table className="w-full text-sm border border-gray-200 rounded">
-          <thead className="bg-gray-50">
-            <tr>
-              {['User', 'Host', 'Plugin', 'Pwd Expired', 'Locked', ''].map(h => (
-                <th key={h} className="px-3 py-2 text-left font-medium text-gray-600 border-b text-xs">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((u, i) => (
-              <tr key={i} className="border-b hover:bg-gray-50">
-                <td className="px-3 py-2 font-mono text-gray-800">{u.User || '(anonymous)'}</td>
-                <td className="px-3 py-2 text-gray-600">{u.Host}</td>
-                <td className="px-3 py-2 text-gray-500 text-xs">{u.plugin}</td>
-                <td className="px-3 py-2 text-gray-500">{u.password_expired}</td>
-                <td className="px-3 py-2 text-gray-500">{u.account_locked}</td>
-                <td className="px-3 py-2">
-                  <button onClick={() => deleteUser(u.User, u.Host)}
-                    className="text-gray-400 hover:text-red-600">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
       {creating && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div className="flex items-center justify-between px-4 py-3 border-b">
-              <h3 className="font-semibold text-gray-800">Create User</h3>
-              <button onClick={() => setCreating(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+              <h3 className="text-sm font-semibold text-white">Create User</h3>
+              <button onClick={() => setCreating(false)} className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors">
+                <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-4 space-y-3">
-              {[
-                { label: 'Username', key: 'user', type: 'text' },
-                { label: 'Host (% = any)', key: 'host', type: 'text' },
-                { label: 'Password', key: 'password', type: 'password' },
-                { label: 'Grant (e.g. ALL PRIVILEGES)', key: 'grants', type: 'text' },
-              ].map(f => (
+            <div className="p-5 space-y-3">
+              {FORM_FIELDS.map(f => (
                 <div key={f.key}>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}</label>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">{f.label}</label>
                   <input
                     type={f.type}
-                    value={form[f.key as keyof typeof form]}
+                    value={form[f.key]}
                     onChange={e => setForm(v => ({ ...v, [f.key]: e.target.value }))}
-                    className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 transition-colors"
                   />
                 </div>
               ))}
             </div>
-            {saveError && <div className="px-4 pb-2 text-red-600 text-sm">{saveError}</div>}
-            <div className="flex justify-end gap-2 px-4 py-3 border-t">
-              <button onClick={() => setCreating(false)} className="px-4 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">
+            {saveError && (
+              <div className="mx-5 mb-2 p-3 text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg">{saveError}</div>
+            )}
+            <div className="flex justify-end gap-2 px-5 py-4 border-t border-zinc-800">
+              <button onClick={() => setCreating(false)}
+                className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-100 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors">
                 Cancel
               </button>
               <button onClick={createUser} disabled={saving}
-                className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">
-                {saving ? 'Creating…' : 'Create'}
+                className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg disabled:opacity-50 transition-colors font-medium">
+                {saving ? 'Creating…' : 'Create User'}
               </button>
             </div>
           </div>

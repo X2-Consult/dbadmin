@@ -1,11 +1,10 @@
 'use client';
 import { useState } from 'react';
-import { X } from 'lucide-react';
+import { X, Key } from 'lucide-react';
 
 interface Column { Field: string; Type: string; Key: string; }
 interface Props {
-  db: string;
-  table: string;
+  db: string; table: string;
   row: Record<string, unknown> | null;
   structure: Column[];
   pkColumns: string[];
@@ -22,7 +21,9 @@ export default function RowEditor({ db, table, row, structure, pkColumns, onClos
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const fields = structure.length > 0 ? structure : Object.keys(row || {}).map(Field => ({ Field, Type: 'text', Key: '' }));
+  const fields = structure.length > 0
+    ? structure
+    : Object.keys(row || {}).map(Field => ({ Field, Type: 'text', Key: '' }));
 
   async function save() {
     setSaving(true);
@@ -31,8 +32,7 @@ export default function RowEditor({ db, table, row, structure, pkColumns, onClos
       const url = `/api/databases/${encodeURIComponent(db)}/tables/${encodeURIComponent(table)}`;
       if (isEdit) {
         const pk = Object.fromEntries(pkColumns.map(k => [k, row![k]]));
-        const body = { ...values, __pk: pk };
-        const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...values, __pk: pk }) });
         const d = await r.json();
         if (d.error) { setError(d.error); return; }
       } else {
@@ -45,41 +45,49 @@ export default function RowEditor({ db, table, row, structure, pkColumns, onClos
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b">
-          <h2 className="font-semibold text-gray-800">{isEdit ? 'Edit Row' : 'Insert Row'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+          <div>
+            <h2 className="text-sm font-semibold text-white">{isEdit ? 'Edit Row' : 'Insert Row'}</h2>
+            <p className="text-xs text-zinc-500 mt-0.5">{db}.{table}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto p-5 space-y-3">
           {fields.map(col => (
             <div key={col.Field}>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                {col.Field}
-                {col.Key === 'PRI' && <span className="ml-1 text-yellow-600 text-xs">PK</span>}
-                <span className="ml-1 text-gray-400 font-normal">{col.Type}</span>
+              <label className="flex items-center gap-1.5 text-xs font-medium text-zinc-400 mb-1.5">
+                {col.Key === 'PRI' && <Key className="w-3 h-3 text-amber-500" />}
+                <span className="text-zinc-300">{col.Field}</span>
+                <span className="text-zinc-600 font-normal">{col.Type}</span>
               </label>
               <input
                 type="text"
                 value={values[col.Field] ?? ''}
                 onChange={e => setValues(v => ({ ...v, [col.Field]: e.target.value }))}
-                className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 transition-colors font-mono"
                 placeholder="NULL"
               />
             </div>
           ))}
         </div>
 
-        {error && <div className="px-4 py-2 text-red-600 text-sm bg-red-50 border-t">{error}</div>}
+        {error && (
+          <div className="mx-5 mb-2 p-3 text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg">{error}</div>
+        )}
 
-        <div className="flex justify-end gap-2 px-4 py-3 border-t">
-          <button onClick={onClose} className="px-4 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50">
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-zinc-800">
+          <button onClick={onClose}
+            className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-100 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors">
             Cancel
           </button>
           <button onClick={save} disabled={saving}
-            className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">
-            {saving ? 'Saving…' : 'Save'}
+            className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg disabled:opacity-50 transition-colors font-medium">
+            {saving ? 'Saving…' : isEdit ? 'Update Row' : 'Insert Row'}
           </button>
         </div>
       </div>

@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Server, Database, Table2, HardDrive } from 'lucide-react';
+import { RefreshCw, Server, Database, HardDrive, Zap, Clock } from 'lucide-react';
 
 interface DbRow {
   database: string;
@@ -10,45 +10,46 @@ interface DbRow {
   indexSize: number;
   estimatedRows: number;
 }
-
 interface OverviewData {
-  server: {
-    version: string;
-    uptime: number;
-    maxConnections: number;
-    openConnections: number;
-  };
+  server: { version: string; uptime: number; maxConnections: number; openConnections: number };
   databases: DbRow[];
 }
 
-function formatBytes(bytes: number): string {
-  if (!bytes || bytes < 1024) return `${bytes || 0} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+function formatBytes(n: number): string {
+  if (!n || n < 1024) return `${n || 0} B`;
+  if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1073741824) return `${(n / 1048576).toFixed(1)} MB`;
+  return `${(n / 1073741824).toFixed(2)} GB`;
 }
 
-function formatUptime(secs: number): string {
-  const d = Math.floor(secs / 86400);
-  const h = Math.floor((secs % 86400) / 3600);
-  const m = Math.floor((secs % 3600) / 60);
+function formatUptime(s: number): string {
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
   if (d > 0) return `${d}d ${h}h ${m}m`;
   if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+  return `${m}m ${s % 60}s`;
 }
 
-function StatCard({ label, value, sub, icon }: { label: string; value: string; sub?: string; icon: React.ReactNode }) {
+function StatCard({ label, value, sub, icon: Icon, accent = false }: {
+  label: string; value: string; sub?: string; icon: React.ElementType; accent?: boolean;
+}) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-start gap-3">
-      <div className="p-2 bg-blue-50 rounded-lg text-blue-600 shrink-0">{icon}</div>
-      <div>
-        <div className="text-xs text-gray-500 font-medium">{label}</div>
-        <div className="text-lg font-semibold text-gray-800 leading-tight">{value}</div>
-        {sub && <div className="text-xs text-gray-400 mt-0.5">{sub}</div>}
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-start gap-3">
+      <div className={`p-2 rounded-lg shrink-0 ${accent ? 'bg-blue-500/10 text-blue-400' : 'bg-zinc-800 text-zinc-400'}`}>
+        <Icon className="w-4 h-4" />
+      </div>
+      <div className="min-w-0">
+        <div className="text-[11px] text-zinc-500 font-medium uppercase tracking-wide">{label}</div>
+        <div className="text-xl font-semibold text-white mt-0.5 tabular-nums">{value}</div>
+        {sub && <div className="text-xs text-zinc-600 mt-0.5">{sub}</div>}
       </div>
     </div>
   );
 }
+
+const BAR_COLORS = [
+  'bg-blue-500', 'bg-violet-500', 'bg-cyan-500', 'bg-emerald-500',
+  'bg-amber-500', 'bg-pink-500', 'bg-orange-500', 'bg-teal-500',
+];
 
 export default function Overview() {
   const [data, setData] = useState<OverviewData | null>(null);
@@ -65,106 +66,98 @@ export default function Overview() {
       if (d.error) { setError(d.error); return; }
       setData(d);
       setLastRefresh(new Date());
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  const totalSize = data?.databases.reduce((s, d) => s + (d.totalSize || 0), 0) ?? 0;
-  const totalTables = data?.databases.reduce((s, d) => s + (d.tableCount || 0), 0) ?? 0;
+  const totalSize = data?.databases.reduce((s, d) => s + d.totalSize, 0) ?? 0;
+  const totalTables = data?.databases.reduce((s, d) => s + d.tableCount, 0) ?? 0;
+  const maxSize = data ? Math.max(...data.databases.map(d => d.totalSize), 1) : 1;
 
   return (
-    <div className="flex flex-col h-full overflow-auto bg-gray-50">
-      <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200 sticky top-0 z-10">
-        <h2 className="text-base font-semibold text-gray-800">Database Overview</h2>
-        <div className="flex items-center gap-3">
-          {lastRefresh && (
-            <span className="text-xs text-gray-400">
-              Updated {lastRefresh.toLocaleTimeString()}
-            </span>
-          )}
-          <button
-            onClick={load}
-            disabled={loading}
-            className="flex items-center gap-1.5 text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg disabled:opacity-50 transition-colors"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
+    <div className="flex flex-col h-full overflow-auto bg-[#09090b]">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 sticky top-0 bg-[#09090b] z-10">
+        <div>
+          <h2 className="text-sm font-semibold text-white">Overview</h2>
+          {lastRefresh && <p className="text-xs text-zinc-600 mt-0.5">Updated {lastRefresh.toLocaleTimeString()}</p>}
         </div>
+        <button onClick={load} disabled={loading}
+          className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-100 bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40">
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
       </div>
 
-      {error && <div className="m-6 p-3 text-red-600 bg-red-50 rounded-lg text-sm">{error}</div>}
+      {error && (
+        <div className="m-6 p-3 text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl text-sm">{error}</div>
+      )}
+
+      {loading && !data && (
+        <div className="flex items-center justify-center h-32 text-zinc-600 text-sm gap-2">
+          <div className="w-4 h-4 border border-zinc-700 border-t-zinc-400 rounded-full animate-spin" />
+          Loading…
+        </div>
+      )}
 
       {data && (
         <div className="p-6 space-y-6">
+          {/* Server stats */}
           <div>
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Server</h3>
+            <p className="text-[11px] font-semibold text-zinc-600 uppercase tracking-widest mb-3">Server</p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <StatCard
-                label="MariaDB Version"
-                value={data.server.version}
-                icon={<Server className="w-4 h-4" />}
-              />
-              <StatCard
-                label="Uptime"
-                value={formatUptime(data.server.uptime)}
-                icon={<Server className="w-4 h-4" />}
-              />
-              <StatCard
-                label="Connections"
-                value={`${data.server.openConnections} / ${data.server.maxConnections}`}
-                sub="open / max"
-                icon={<Server className="w-4 h-4" />}
-              />
-              <StatCard
-                label="Total Data Size"
-                value={formatBytes(totalSize)}
-                sub={`${totalTables} tables`}
-                icon={<HardDrive className="w-4 h-4" />}
-              />
+              <StatCard label="Version"      value={data.server.version} icon={Server} />
+              <StatCard label="Uptime"       value={formatUptime(data.server.uptime)} icon={Clock} accent />
+              <StatCard label="Connections"  value={`${data.server.openConnections}`}
+                sub={`of ${data.server.maxConnections} max`} icon={Zap} accent />
+              <StatCard label="Total Size"   value={formatBytes(totalSize)}
+                sub={`${totalTables} tables`} icon={HardDrive} />
             </div>
           </div>
 
+          {/* Databases */}
           <div>
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Databases</h3>
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <table className="w-full text-sm">
+            <p className="text-[11px] font-semibold text-zinc-600 uppercase tracking-widest mb-3">Databases</p>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+              <table className="w-full text-xs">
                 <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="px-4 py-3 text-left font-medium text-gray-600 text-xs">Database</th>
-                    <th className="px-4 py-3 text-right font-medium text-gray-600 text-xs">Tables</th>
-                    <th className="px-4 py-3 text-right font-medium text-gray-600 text-xs">Est. Rows</th>
-                    <th className="px-4 py-3 text-right font-medium text-gray-600 text-xs">Data</th>
-                    <th className="px-4 py-3 text-right font-medium text-gray-600 text-xs">Indexes</th>
-                    <th className="px-4 py-3 text-right font-medium text-gray-600 text-xs">Total</th>
+                  <tr className="border-b border-zinc-800">
+                    <th className="px-4 py-3 text-left font-medium text-zinc-500">Database</th>
+                    <th className="px-4 py-3 text-left font-medium text-zinc-500 w-40">Size</th>
+                    <th className="px-4 py-3 text-right font-medium text-zinc-500">Tables</th>
+                    <th className="px-4 py-3 text-right font-medium text-zinc-500">Est. Rows</th>
+                    <th className="px-4 py-3 text-right font-medium text-zinc-500">Data</th>
+                    <th className="px-4 py-3 text-right font-medium text-zinc-500">Indexes</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.databases.map((db, i) => (
-                    <tr key={db.database} className={`border-b border-gray-100 hover:bg-blue-50/30 ${i === data.databases.length - 1 ? 'border-0' : ''}`}>
+                    <tr key={db.database} className="border-b border-zinc-800/60 last:border-0 hover:bg-zinc-800/40 transition-colors">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <Database className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                          <span className="font-medium text-gray-800">{db.database}</span>
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${BAR_COLORS[i % BAR_COLORS.length]}`} />
+                          <Database className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                          <span className="font-medium text-zinc-200">{db.database}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-600">
-                        <span className="flex items-center justify-end gap-1">
-                          <Table2 className="w-3 h-3 text-gray-400" />
-                          {db.tableCount}
-                        </span>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${BAR_COLORS[i % BAR_COLORS.length]} opacity-70`}
+                              style={{ width: `${(db.totalSize / maxSize) * 100}%` }}
+                            />
+                          </div>
+                          <span className="text-zinc-400 tabular-nums text-right w-16">{formatBytes(db.totalSize)}</span>
+                        </div>
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-500">
+                      <td className="px-4 py-3 text-right text-zinc-400 tabular-nums">{db.tableCount}</td>
+                      <td className="px-4 py-3 text-right text-zinc-500 tabular-nums">
                         {db.estimatedRows ? `~${db.estimatedRows.toLocaleString()}` : '—'}
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-500">{formatBytes(db.dataSize)}</td>
-                      <td className="px-4 py-3 text-right text-gray-500">{formatBytes(db.indexSize)}</td>
-                      <td className="px-4 py-3 text-right">
-                        <span className="font-medium text-gray-700">{formatBytes(db.totalSize)}</span>
-                      </td>
+                      <td className="px-4 py-3 text-right text-zinc-500 tabular-nums">{formatBytes(db.dataSize)}</td>
+                      <td className="px-4 py-3 text-right text-zinc-500 tabular-nums">{formatBytes(db.indexSize)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -172,10 +165,6 @@ export default function Overview() {
             </div>
           </div>
         </div>
-      )}
-
-      {loading && !data && (
-        <div className="flex items-center justify-center h-48 text-gray-400 text-sm">Loading…</div>
       )}
     </div>
   );
