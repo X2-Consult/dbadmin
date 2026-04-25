@@ -2,6 +2,7 @@
 import { useState, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Play, Clock, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { useConn } from '@/context/ConnectionContext';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
 
@@ -17,6 +18,7 @@ interface QueryResult {
 }
 
 export default function SqlEditor({ db }: Props) {
+  const { connId } = useConn();
   const [sql, setSql] = useState(db ? `SELECT * FROM ` : 'SELECT 1;');
   const [result, setResult] = useState<QueryResult | null>(null);
   const [running, setRunning] = useState(false);
@@ -36,7 +38,7 @@ export default function SqlEditor({ db }: Props) {
       const r = await fetch('/api/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sql: toRun, db }),
+        body: JSON.stringify({ sql: toRun, db, conn: connId }),
       });
       setResult(await r.json());
     } finally { setRunning(false); }

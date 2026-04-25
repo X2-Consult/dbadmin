@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { Key, Hash, Type } from 'lucide-react';
+import { useConn } from '@/context/ConnectionContext';
 
 interface Column {
   Field: string; Type: string; Null: string; Key: string; Default: unknown; Extra: string;
@@ -17,17 +18,18 @@ const KEY_BADGES: Record<string, { label: string; color: string }> = {
 };
 
 export default function StructureView({ db, table }: Props) {
+  const { connId } = useConn();
   const [columns, setColumns] = useState<Column[]>([]);
   const [indexes, setIndexes] = useState<Index[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/databases/${encodeURIComponent(db)}/tables/${encodeURIComponent(table)}/structure`)
+    fetch(`/api/databases/${encodeURIComponent(db)}/tables/${encodeURIComponent(table)}/structure?conn=${connId}`)
       .then(r => r.json())
       .then(d => { setColumns(d.columns || []); setIndexes(d.indexes || []); })
       .finally(() => setLoading(false));
-  }, [db, table]);
+  }, [db, table, connId]);
 
   if (loading) return (
     <div className="flex items-center justify-center h-32 text-zinc-600 text-sm gap-2 bg-[#09090b]">

@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { X, Key } from 'lucide-react';
+import { useConn } from '@/context/ConnectionContext';
 
 interface Column { Field: string; Type: string; Key: string; }
 interface Props {
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export default function RowEditor({ db, table, row, structure, pkColumns, onClose, onSaved }: Props) {
+  const { connId } = useConn();
   const isEdit = !!row;
   const [values, setValues] = useState<Record<string, string>>(() => {
     if (!row) return {};
@@ -29,7 +31,7 @@ export default function RowEditor({ db, table, row, structure, pkColumns, onClos
     setSaving(true);
     setError('');
     try {
-      const url = `/api/databases/${encodeURIComponent(db)}/tables/${encodeURIComponent(table)}`;
+      const url = `/api/databases/${encodeURIComponent(db)}/tables/${encodeURIComponent(table)}?conn=${connId}`;
       if (isEdit) {
         const pk = Object.fromEntries(pkColumns.map(k => [k, row![k]]));
         const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...values, __pk: pk }) });

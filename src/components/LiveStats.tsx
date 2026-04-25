@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Activity, Pause, Play, Wifi, WifiOff, TrendingUp, Database, Cpu, ArrowDown, ArrowUp } from 'lucide-react';
+import { Activity, Pause, Play, WifiOff, TrendingUp, Database, Cpu, ArrowDown, ArrowUp } from 'lucide-react';
+import { useConn } from '@/context/ConnectionContext';
 
 interface Snapshot { stats: Record<string, number>; ts: number; }
 interface Rate {
@@ -40,6 +41,7 @@ function MetricCard({
 }
 
 export default function LiveStats() {
+  const { connId } = useConn();
   const [rate, setRate] = useState<Rate | null>(null);
   const [running, setRunning] = useState(true);
   const [connected, setConnected] = useState(true);
@@ -49,7 +51,7 @@ export default function LiveStats() {
 
   const poll = useCallback(async () => {
     try {
-      const r = await fetch('/api/stats/live');
+      const r = await fetch(`/api/stats/live?conn=${connId}`);
       const d = await r.json();
       if (d.error) { setError(d.error); setConnected(false); return; }
       setConnected(true);
@@ -79,7 +81,10 @@ export default function LiveStats() {
       }
       prev.current = curr;
     } catch { setConnected(false); }
-  }, []);
+  }, [connId]);
+
+  // Reset rate when connection changes
+  useEffect(() => { prev.current = null; setRate(null); }, [connId]);
 
   useEffect(() => {
     if (!running) return;

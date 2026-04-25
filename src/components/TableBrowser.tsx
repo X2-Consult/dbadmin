@@ -2,10 +2,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Pencil, Trash2, Plus, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import RowEditor from './RowEditor';
+import { useConn } from '@/context/ConnectionContext';
 
 interface Props { db: string; table: string; }
 
 export default function TableBrowser({ db, table }: Props) {
+  const { connId } = useConn();
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [columns, setColumns] = useState<string[]>([]);
   const [total, setTotal] = useState(0);
@@ -22,7 +24,7 @@ export default function TableBrowser({ db, table }: Props) {
     setError('');
     try {
       const r = await fetch(
-        `/api/databases/${encodeURIComponent(db)}/tables/${encodeURIComponent(table)}?page=${page}&pageSize=${pageSize}`
+        `/api/databases/${encodeURIComponent(db)}/tables/${encodeURIComponent(table)}?page=${page}&pageSize=${pageSize}&conn=${connId}`
       );
       const d = await r.json();
       if (d.error) { setError(d.error); return; }
@@ -30,16 +32,16 @@ export default function TableBrowser({ db, table }: Props) {
       setTotal(d.total);
       if (d.rows.length > 0) setColumns(Object.keys(d.rows[0]));
     } finally { setLoading(false); }
-  }, [db, table, page, pageSize]);
+  }, [db, table, page, pageSize, connId]);
 
-  useEffect(() => { setPage(1); }, [db, table]);
+  useEffect(() => { setPage(1); }, [db, table, connId]);
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    fetch(`/api/databases/${encodeURIComponent(db)}/tables/${encodeURIComponent(table)}/structure`)
+    fetch(`/api/databases/${encodeURIComponent(db)}/tables/${encodeURIComponent(table)}/structure?conn=${connId}`)
       .then(r => r.json())
       .then(d => setStructure(d.columns || []));
-  }, [db, table]);
+  }, [db, table, connId]);
 
   const pkColumns = structure.filter(c => c.Key === 'PRI').map(c => c.Field);
   function pkOf(row: Record<string, unknown>) {
@@ -50,7 +52,7 @@ export default function TableBrowser({ db, table }: Props) {
   async function deleteRow(row: Record<string, unknown>) {
     if (!confirm('Delete this row?')) return;
     await fetch(
-      `/api/databases/${encodeURIComponent(db)}/tables/${encodeURIComponent(table)}`,
+      `/api/databases/${encodeURIComponent(db)}/tables/${encodeURIComponent(table)}?conn=${connId}`,
       { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pkOf(row)) }
     );
     load();

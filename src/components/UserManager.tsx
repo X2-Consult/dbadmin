@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { Trash2, Plus, X, ShieldCheck, ShieldAlert, User } from 'lucide-react';
+import { useConn } from '@/context/ConnectionContext';
 
 interface DbUser {
   User: string; Host: string; plugin: string; password_expired: string; account_locked: string;
@@ -14,6 +15,7 @@ const FORM_FIELDS = [
 ] as const;
 
 export default function UserManager() {
+  const { connId } = useConn();
   const [users, setUsers] = useState<DbUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -24,18 +26,18 @@ export default function UserManager() {
 
   async function load() {
     setLoading(true);
-    const r = await fetch('/api/users');
+    const r = await fetch(`/api/users?conn=${connId}`);
     const d = await r.json();
     if (d.error) setError(d.error);
     else setUsers(d.users || []);
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [connId]);
 
   async function deleteUser(user: string, host: string) {
     if (!confirm(`Drop user '${user}'@'${host}'?`)) return;
-    await fetch('/api/users', {
+    await fetch(`/api/users?conn=${connId}`, {
       method: 'DELETE', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user, host }),
     });
@@ -45,7 +47,7 @@ export default function UserManager() {
   async function createUser() {
     setSaving(true);
     setSaveError('');
-    const r = await fetch('/api/users', {
+    const r = await fetch(`/api/users?conn=${connId}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user: form.user, host: form.host, password: form.password, grants: form.grants ? [form.grants] : [] }),
     });

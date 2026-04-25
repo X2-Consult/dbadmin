@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPool } from '@/lib/db';
+import { getConnPool } from '@/lib/connections';
+import { listUsers, createUser, dropUser } from '@/lib/adapter';
 
-export async function GET() {
+function conn(req: NextRequest) { return req.nextUrl.searchParams.get('conn') || 'default'; }
+
+export async function GET(req: NextRequest) {
   try {
-    const conn = getPool();
-    const [rows] = await conn.query(
-      `SELECT User, Host, plugin, password_expired, account_locked
-       FROM mysql.user ORDER BY User, Host`
-    );
-    return NextResponse.json({ users: rows });
+    const pool = await getConnPool(conn(req));
+    const users = await listUsers(pool);
+    return NextResponse.json({ users });
   } catch (e: unknown) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
@@ -17,17 +17,8 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const { user, host, password, grants } = await req.json();
   try {
-    const conn = getPool();
-    await conn.execute(
-      `CREATE USER ?@? IDENTIFIED BY ?`,
-      [user, host || '%', password]
-    );
-    if (grants?.length) {
-      for (const grant of grants as string[]) {
-        await conn.query(`GRANT ${grant} ON *.* TO ?@?`, [user, host || '%']);
-      }
-    }
-    await conn.query('FLUSH PRIVILEGES');
+    const pool = await getConnPool(conn(req));
+    await createUser(pool, user, host || '%', password, grants || []);
     return NextResponse.json({ ok: true });
   } catch (e: unknown) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
@@ -37,9 +28,8 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const { user, host } = await req.json();
   try {
-    const conn = getPool();
-    await conn.execute(`DROP USER ?@?`, [user, host]);
-    await conn.query('FLUSH PRIVILEGES');
+    const pool = await getConnPool(conn(req));
+    await dropUser(pool, user, host);
     return NextResponse.json({ ok: true });
   } catch (e: unknown) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });

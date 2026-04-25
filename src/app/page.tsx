@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { ConnectionProvider } from '@/context/ConnectionContext';
 import Sidebar from '@/components/Sidebar';
 import TableBrowser from '@/components/TableBrowser';
 import SqlEditor from '@/components/SqlEditor';
@@ -11,7 +12,7 @@ import { LayoutList, Code2, Table2 } from 'lucide-react';
 
 type TableTab = 'data' | 'structure' | 'sql';
 
-export default function Home() {
+function App() {
   const [selected, setSelected] = useState<{ db: string; table: string } | null>(null);
   const [view, setView] = useState<string>('overview');
   const [tableTab, setTableTab] = useState<TableTab>('data');
@@ -41,15 +42,10 @@ export default function Home() {
               <span className="text-zinc-300 font-medium">{selected.table}</span>
             </span>
             {tableTabs.map(t => (
-              <button
-                key={t.id}
-                onClick={() => setTableTab(t.id)}
+              <button key={t.id} onClick={() => setTableTab(t.id)}
                 className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors ${
-                  tableTab === t.id
-                    ? 'border-blue-500 text-blue-400'
-                    : 'border-transparent text-zinc-500 hover:text-zinc-300'
-                }`}
-              >
+                  tableTab === t.id ? 'border-blue-500 text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                }`}>
                 {t.icon}{t.label}
               </button>
             ))}
@@ -67,5 +63,13 @@ export default function Home() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <ConnectionProvider>
+      <App />
+    </ConnectionProvider>
   );
 }

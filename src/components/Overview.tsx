@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Server, Database, HardDrive, Zap, Clock } from 'lucide-react';
+import { useConn } from '@/context/ConnectionContext';
 
 interface DbRow {
   database: string;
@@ -52,6 +53,7 @@ const BAR_COLORS = [
 ];
 
 export default function Overview() {
+  const { connId } = useConn();
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -60,14 +62,15 @@ export default function Overview() {
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
+    setData(null);
     try {
-      const r = await fetch('/api/stats/overview');
+      const r = await fetch(`/api/stats/overview?conn=${connId}`);
       const d = await r.json();
       if (d.error) { setError(d.error); return; }
       setData(d);
       setLastRefresh(new Date());
     } finally { setLoading(false); }
-  }, []);
+  }, [connId]);
 
   useEffect(() => { load(); }, [load]);
 
