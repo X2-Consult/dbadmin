@@ -291,7 +291,7 @@ export async function getOverviewStats(pool: ConnPool): Promise<OverviewStats> {
     pool.mysql!.query(`SELECT VARIABLE_VALUE as val FROM information_schema.GLOBAL_STATUS WHERE VARIABLE_NAME='Threads_connected'`) as Promise<[Array<{ val: string }>, unknown]>,
     pool.mysql!.query(`
       SELECT table_schema AS \`database\`,
-             COUNT(*)::int AS tableCount,
+             COUNT(*) AS tableCount,
              SUM(data_length+index_length) AS totalSize,
              SUM(data_length) AS dataSize,
              SUM(index_length) AS indexSize,
