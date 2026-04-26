@@ -1,6 +1,6 @@
 'use client';
 import { useState, useRef, useEffect } from 'react';
-import { MoreHorizontal, Pencil, Trash2, Eraser, Loader2, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { MoreHorizontal, Pencil, Trash2, Eraser, Loader2, ShieldAlert, AlertTriangle, Wrench } from 'lucide-react';
 import { useConn } from '@/context/ConnectionContext';
 import { useToast } from '@/context/ToastContext';
 
@@ -12,13 +12,15 @@ interface Props {
   onTruncated: () => void;
 }
 
-type Modal = 'rename' | 'truncate-confirm' | 'drop-1' | 'drop-2' | null;
+type Modal = 'rename' | 'truncate-confirm' | 'drop-1' | 'drop-2' | 'maintenance' | null;
 
 export default function TableActions({ db, table, onRenamed, onDropped, onTruncated }: Props) {
   const { connId } = useConn();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [modal, setModal] = useState<Modal>(null);
+  const [maintOp, setMaintOp] = useState<string>('');
+  const [maintResult, setMaintResult] = useState<Array<Record<string, string>>>([]);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -61,6 +63,20 @@ export default function TableActions({ db, table, onRenamed, onDropped, onTrunca
     onTruncated();
   }
 
+  async function runMaintenance(op: string) {
+    setBusy(true);
+    const r = await fetch(`${base}/maintenance${qs}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ op }),
+    });
+    const d = await r.json();
+    setBusy(false);
+    if (d.error) { toast(d.error, 'error'); return; }
+    setMaintResult(d.rows || []);
+    toast(`${op} complete`);
+  }
+
   async function drop() {
     setBusy(true);
     const r = await fetch(`${base}/drop${qs}`, { method: 'POST' });
@@ -96,6 +112,12 @@ export default function TableActions({ db, table, onRenamed, onDropped, onTrunca
             >
               <Eraser className="w-3.5 h-3.5 text-zinc-500" /> Truncate table
             </button>
+            <button
+              onClick={() => { setMaintOp(''); setMaintResult([]); setModal('maintenance'); setOpen(false); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+            >
+              <Wrench className="w-3.5 h-3.5 text-zinc-500" /> Maintenance
+            </button>
             <div className="my-1 border-t border-zinc-800" />
             <button
               onClick={() => { setModal('drop-1'); setOpen(false); }}
@@ -106,6 +128,54 @@ export default function TableActions({ db, table, onRenamed, onDropped, onTrunca
           </div>
         )}
       </div>
+
+      {/* Maintenance modal */}
+      {modal === 'maintenance' && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-white">Table Maintenance</h2>
+              <span className="text-xs font-mono text-zinc-500">{db}.{table}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {(['OPTIMIZE','ANALYZE','REPAIR','CHECK'] as const).map(op => (
+                <button
+                  key={op}
+                  onClick={() => { setMaintOp(op); runMaintenance(op); }}
+                  disabled={busy}
+                  className={`flex items-center justify-center gap-2 py-2.5 rounded-lg border text-xs font-medium transition-colors disabled:opacity-40 ${
+                    maintOp === op && busy
+                      ? 'border-blue-500/50 bg-blue-500/10 text-blue-400'
+                      : 'border-zinc-700 text-zinc-300 hover:border-zinc-600 hover:bg-zinc-800'
+                  }`}
+                >
+                  {maintOp === op && busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wrench className="w-3.5 h-3.5 text-zinc-500" />}
+                  {op}
+                </button>
+              ))}
+            </div>
+            {maintResult.length > 0 && (
+              <div className="rounded-lg border border-zinc-800 overflow-hidden">
+                <table className="min-w-full text-xs">
+                  <thead><tr className="border-b border-zinc-800 bg-zinc-800/40">
+                    {Object.keys(maintResult[0]).map(k => <th key={k} className="px-3 py-2 text-left text-zinc-500">{k}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {maintResult.map((row, i) => (
+                      <tr key={i} className="border-b border-zinc-800/40 last:border-0">
+                        {Object.values(row).map((v, j) => <td key={j} className="px-3 py-2 text-zinc-300">{String(v)}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="flex justify-end">
+              <button onClick={() => { setModal(null); setMaintResult([]); setMaintOp(''); }} className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-100 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Rename modal */}
       {modal === 'rename' && (

@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown, Database, Table2, Users, BarChart2, Activity, LogOut, Layers, ChevronsUpDown, Eye, Lock, HardDrive, Search, Bookmark, BookOpen, Plus, Trash2, Cpu } from 'lucide-react';
+import { ChevronRight, ChevronDown, Database, Table2, Users, BarChart2, Activity, LogOut, Layers, ChevronsUpDown, Eye, Lock, HardDrive, Search, Bookmark, BookOpen, Plus, Trash2, Cpu, Workflow, Zap, CalendarClock, Settings2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useConn } from '@/context/ConnectionContext';
 import ConnectionPanel from './ConnectionPanel';
@@ -14,6 +14,7 @@ interface Props {
   onCreateTable: (db: string) => void;
   onDropDb: (db: string) => void;
   onCreateDb: () => void;
+  onDbView: (db: string, view: string) => void;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -25,7 +26,7 @@ const TYPE_LABELS: Record<string, string> = {
   mariadb: 'MariaDB', mysql: 'MySQL', postgres: 'PostgreSQL',
 };
 
-export default function Sidebar({ selected, onSelect, activeView, onView, onSearch, onCreateTable, onDropDb, onCreateDb }: Props) {
+export default function Sidebar({ selected, onSelect, activeView, onView, onSearch, onCreateTable, onDropDb, onCreateDb, onDbView }: Props) {
   const { connId, setConnId } = useConn();
   const [databases, setDatabases] = useState<string[]>([]);
   const [tables, setTables] = useState<Record<string, string[]>>({});
@@ -128,6 +129,7 @@ export default function Sidebar({ selected, onSelect, activeView, onView, onSear
             { id: 'overview',   label: 'Overview',   icon: BarChart2  },
             { id: 'live',       label: 'Live Stats', icon: Activity   },
             { id: 'processes',  label: 'Processes',  icon: Cpu        },
+            { id: 'variables',  label: 'Variables',  icon: Settings2  },
             { id: 'saved',      label: 'Saved',      icon: Bookmark   },
             { id: 'backup',     label: 'Backup',     icon: HardDrive  },
             { id: 'help',       label: 'Help',       icon: BookOpen   },
@@ -197,6 +199,22 @@ export default function Sidebar({ selected, onSelect, activeView, onView, onSear
 
               {expanded.has(db) && (
                 <>
+                  {[
+                    { id: 'routines', label: 'Routines', icon: Workflow },
+                    { id: 'triggers', label: 'Triggers', icon: Zap },
+                    { id: 'events',   label: 'Events',   icon: CalendarClock },
+                  ].map(({ id, label, icon: Icon }) => (
+                    <button key={id}
+                      onClick={() => onDbView(db, id)}
+                      className={`w-full flex items-center gap-1.5 pl-7 pr-3 py-1 rounded-lg text-left transition-colors text-xs ${
+                        activeView === `db-${id}` && selected?.db === db
+                          ? 'bg-zinc-800 text-zinc-300'
+                          : 'text-zinc-600 hover:text-zinc-400 hover:bg-zinc-800/50'
+                      }`}
+                    >
+                      <Icon className="w-3 h-3 shrink-0" />{label}
+                    </button>
+                  ))}
                   {(tables[db] || []).map(t => (
                     <button key={`t:${t}`}
                       onClick={() => { onSelect(db, t); onView('table'); }}

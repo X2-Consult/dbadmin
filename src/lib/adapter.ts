@@ -722,3 +722,249 @@ export async function getCompletions(
     columns: cRows[0].map(r => ({ table: r.table_name, column: r.column_name })),
   };
 }
+
+// ─── Routines ─────────────────────────────────────────────────────────────────
+
+export interface Routine {
+  name: string;
+  type: string;
+  language: string;
+}
+
+export async function listRoutines(pool: ConnPool, db: string): Promise<Routine[]> {
+  if (isPg(pool)) {
+    const { rows } = await pool.pg!.query(
+      `SELECT p.proname AS name,
+              CASE WHEN p.prokind = 'f' THEN 'FUNCTION' ELSE 'PROCEDURE' END AS type,
+              l.lanname AS language
+       FROM pg_proc p
+       JOIN pg_namespace n ON n.oid = p.pronamespace
+       JOIN pg_language l ON l.oid = p.prolang
+       WHERE n.nspname = $1 AND p.prokind IN ('f','p')
+       ORDER BY type, name`,
+      [db]
+    );
+    return rows as Routine[];
+  }
+  const [rows] = await pool.mysql!.execute(
+    `SELECT ROUTINE_NAME AS name, ROUTINE_TYPE AS type,
+            COALESCE(EXTERNAL_LANGUAGE,'SQL') AS language
+     FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ?
+     ORDER BY ROUTINE_TYPE, ROUTINE_NAME`,
+    [db]
+  ) as [Routine[], unknown];
+  return rows;
+}
+
+export async function getRoutineBody(
+  pool: ConnPool, db: string, name: string, type: string
+): Promise<string> {
+  if (isPg(pool)) {
+    const { rows } = await pool.pg!.query(
+      `SELECT pg_get_functiondef(p.oid) AS body
+       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = $1 AND p.proname = $2 LIMIT 1`,
+      [db, name]
+    );
+    return rows[0]?.body || '';
+  }
+  const isProc = type.toUpperCase() === 'PROCEDURE';
+  const q = isProc
+    ? `SHOW CREATE PROCEDURE ${qi(db, false)}.${qi(name, false)}`
+    : `SHOW CREATE FUNCTION ${qi(db, false)}.${qi(name, false)}`;
+  const [[row]] = await pool.mysql!.query(q) as [Array<Record<string, string>>, unknown];
+  return row[isProc ? 'Create Procedure' : 'Create Function'] || '';
+}
+
+export async function dropRoutine(
+  pool: ConnPool, db: string, name: string, type: string
+): Promise<void> {
+  assertWritable(pool);
+  const pg = isPg(pool);
+  const sql = `DROP ${type.toUpperCase()} IF EXISTS ${qi(db, pg)}.${qi(name, pg)}`;
+  if (pg) await pool.pg!.query(sql); else await pool.mysql!.query(sql);
+}
+
+// ─── Triggers ─────────────────────────────────────────────────────────────────
+
+export interface TriggerInfo {
+  name: string;
+  event: string;
+  table: string;
+  timing: string;
+  body: string;
+}
+
+export async function listTriggers(pool: ConnPool, db: string): Promise<TriggerInfo[]> {
+  if (isPg(pool)) {
+    const { rows } = await pool.pg!.query(
+      `SELECT t.trigger_name AS name, t.event_manipulation AS event,
+              t.event_object_table AS "table", t.action_timing AS timing,
+              t.action_statement AS body
+       FROM information_schema.triggers t
+       WHERE t.trigger_schema = $1
+       ORDER BY event_object_table, trigger_name`,
+      [db]
+    );
+    return rows as TriggerInfo[];
+  }
+  const [rows] = await pool.mysql!.execute(
+    `SELECT TRIGGER_NAME AS name, EVENT_MANIPULATION AS event,
+            EVENT_OBJECT_TABLE AS \`table\`, ACTION_TIMING AS timing,
+            ACTION_STATEMENT AS body
+     FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = ?
+     ORDER BY EVENT_OBJECT_TABLE, TRIGGER_NAME`,
+    [db]
+  ) as [TriggerInfo[], unknown];
+  return rows;
+}
+
+export async function dropTrigger(
+  pool: ConnPool, db: string, name: string, table: string
+): Promise<void> {
+  assertWritable(pool);
+  if (isPg(pool)) {
+    await pool.pg!.query(
+      `DROP TRIGGER IF EXISTS ${qi(name, true)} ON ${qi(db, true)}.${qi(table, true)}`
+    );
+  } else {
+    await pool.mysql!.query(`DROP TRIGGER IF EXISTS ${qi(db, false)}.${qi(name, false)}`);
+  }
+}
+
+// ─── Events (MySQL/MariaDB only) ──────────────────────────────────────────────
+
+export interface EventInfo {
+  name: string;
+  status: string;
+  type: string;
+  executeAt: string | null;
+  intervalValue: string | null;
+  intervalField: string | null;
+  body: string;
+}
+
+export async function listEvents(pool: ConnPool, db: string): Promise<EventInfo[]> {
+  if (isPg(pool)) return [];
+  const [rows] = await pool.mysql!.execute(
+    `SELECT EVENT_NAME AS name, STATUS AS status, EVENT_TYPE AS type,
+            EXECUTE_AT AS executeAt, INTERVAL_VALUE AS intervalValue,
+            INTERVAL_FIELD AS intervalField, EVENT_DEFINITION AS body
+     FROM information_schema.EVENTS WHERE EVENT_SCHEMA = ?
+     ORDER BY EVENT_NAME`,
+    [db]
+  ) as [EventInfo[], unknown];
+  return rows;
+}
+
+export async function dropEvent(pool: ConnPool, db: string, name: string): Promise<void> {
+  assertWritable(pool);
+  if (!isPg(pool)) {
+    await pool.mysql!.query(`DROP EVENT IF EXISTS ${qi(db, false)}.${qi(name, false)}`);
+  }
+}
+
+// ─── Server variables ─────────────────────────────────────────────────────────
+
+export interface ServerVariable {
+  name: string;
+  value: string;
+  category: string;
+  description: string;
+}
+
+export async function getServerVariables(pool: ConnPool): Promise<ServerVariable[]> {
+  if (isPg(pool)) {
+    const { rows } = await pool.pg!.query(
+      `SELECT name, setting AS value, category, short_desc AS description
+       FROM pg_settings ORDER BY category, name`
+    );
+    return rows as ServerVariable[];
+  }
+  const [rows] = await pool.mysql!.query(
+    'SHOW VARIABLES'
+  ) as [Array<{ Variable_name: string; Value: string }>, unknown];
+  return rows.map(r => ({
+    name: r.Variable_name,
+    value: r.Value,
+    category: r.Variable_name.split('_')[0],
+    description: '',
+  }));
+}
+
+// ─── Table maintenance ────────────────────────────────────────────────────────
+
+export type MaintenanceOp = 'OPTIMIZE' | 'ANALYZE' | 'REPAIR' | 'CHECK';
+
+export async function tableMaintenanceOp(
+  pool: ConnPool, db: string, table: string, op: MaintenanceOp
+): Promise<Array<Record<string, string>>> {
+  const pg = isPg(pool);
+  const q = qi(db, pg) + '.' + qi(table, pg);
+  if (pg) {
+    const pgSql = op === 'OPTIMIZE' || op === 'REPAIR' ? `VACUUM ANALYZE ${q}` : `ANALYZE ${q}`;
+    await pool.pg!.query(pgSql);
+    return [{ Table: `${db}.${table}`, Op: op, Msg_type: 'status', Msg_text: 'OK' }];
+  }
+  const [rows] = await pool.mysql!.query(`${op} TABLE ${q}`) as [Array<Record<string, string>>, unknown];
+  return rows;
+}
+
+// ─── Alter column ─────────────────────────────────────────────────────────────
+
+export interface AlterColumnDef {
+  newName: string;
+  type: string;
+  notNull: boolean;
+  defaultVal: string;
+  autoIncrement: boolean;
+}
+
+export async function alterColumn(
+  pool: ConnPool, db: string, table: string,
+  oldName: string, def: AlterColumnDef
+): Promise<void> {
+  assertWritable(pool);
+  const pg = isPg(pool);
+  const q = qi(db, pg) + '.' + qi(table, pg);
+  const col = qi(oldName, pg);
+  const safeType = def.type.replace(/[^\w\s(),]/g, '');
+
+  if (pg) {
+    if (safeType) {
+      await pool.pg!.query(
+        `ALTER TABLE ${q} ALTER COLUMN ${col} TYPE ${safeType} USING ${col}::text::${safeType}`
+      );
+    }
+    if (def.notNull) {
+      await pool.pg!.query(`ALTER TABLE ${q} ALTER COLUMN ${col} SET NOT NULL`);
+    } else {
+      await pool.pg!.query(`ALTER TABLE ${q} ALTER COLUMN ${col} DROP NOT NULL`);
+    }
+    if (def.defaultVal.trim()) {
+      await pool.pg!.query(
+        `ALTER TABLE ${q} ALTER COLUMN ${col} SET DEFAULT '${def.defaultVal.replace(/'/g, "''")}'`
+      );
+    } else {
+      await pool.pg!.query(`ALTER TABLE ${q} ALTER COLUMN ${col} DROP DEFAULT`);
+    }
+    if (def.newName && def.newName !== oldName) {
+      await pool.pg!.query(
+        `ALTER TABLE ${q} RENAME COLUMN ${col} TO ${qi(def.newName, true)}`
+      );
+    }
+  } else {
+    const nn = def.notNull ? ' NOT NULL' : '';
+    const dflt = def.defaultVal.trim() ? ` DEFAULT '${def.defaultVal.replace(/'/g, "\\'")}'` : '';
+    const ai = def.autoIncrement ? ' AUTO_INCREMENT' : '';
+    if (def.newName && def.newName !== oldName) {
+      await pool.mysql!.query(
+        `ALTER TABLE ${q} CHANGE COLUMN ${col} ${qi(def.newName, false)} ${safeType}${nn}${dflt}${ai}`
+      );
+    } else {
+      await pool.mysql!.query(
+        `ALTER TABLE ${q} MODIFY COLUMN ${col} ${safeType}${nn}${dflt}${ai}`
+      );
+    }
+  }
+}

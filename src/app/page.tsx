@@ -21,6 +21,10 @@ import DropDatabaseModal from '@/components/DropDatabaseModal';
 import TableActions from '@/components/TableActions';
 import ImportModal from '@/components/ImportModal';
 import ProcessList from '@/components/ProcessList';
+import RoutinesView from '@/components/RoutinesView';
+import TriggersView from '@/components/TriggersView';
+import EventsView from '@/components/EventsView';
+import ServerVariables from '@/components/ServerVariables';
 import { LayoutList, Code2, Table2, Wrench, Upload } from 'lucide-react';
 import { useConn } from '@/context/ConnectionContext';
 
@@ -37,6 +41,7 @@ function App() {
   const [showCreateDb, setShowCreateDb] = useState(false);
   const [dropDbTarget, setDropDbTarget] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
+  const [dbView, setDbView] = useState<{ db: string; view: string } | null>(null);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -87,6 +92,7 @@ function App() {
         onCreateTable={db => setCreateTableDb(db)}
         onDropDb={db => setDropDbTarget(db)}
         onCreateDb={() => setShowCreateDb(true)}
+        onDbView={(db, v) => { setDbView({ db, view: v }); setView(`db-${v}`); }}
       />
 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
@@ -134,6 +140,10 @@ function App() {
             {view === 'backup'     && <BackupRestore />}
             {view === 'help'       && <HelpDocs />}
             {view === 'processes'  && <ProcessList />}
+            {view === 'variables'  && <ServerVariables />}
+            {view === 'db-routines' && dbView && <RoutinesView db={dbView.db} />}
+            {view === 'db-triggers' && dbView && <TriggersView db={dbView.db} />}
+            {view === 'db-events'   && dbView && <EventsView   db={dbView.db} />}
 
             {view === 'table' && selected && tableTab === 'data'      && (
               <TableBrowser db={selected.db} table={selected.table} />

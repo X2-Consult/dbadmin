@@ -1,8 +1,9 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Key, Hash, Type, Plus, Trash2, ExternalLink, Loader2 } from 'lucide-react';
+import { Key, Hash, Type, Plus, Trash2, ExternalLink, Loader2, Pencil } from 'lucide-react';
 import { useConn } from '@/context/ConnectionContext';
 import { useToast } from '@/context/ToastContext';
+import AlterColumnModal from './AlterColumnModal';
 
 interface Column {
   Field: string; Type: string; Null: string; Key: string; Default: unknown; Extra: string;
@@ -29,6 +30,7 @@ export default function StructureView({ db, table }: Props) {
   const [foreignKeys, setForeignKeys] = useState<ForeignKey[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [alterColumn, setAlterColumn] = useState<Column | null>(null);
   const [showAddIndex, setShowAddIndex] = useState(false);
   const [idxName, setIdxName] = useState('');
   const [idxCols, setIdxCols] = useState('');
@@ -93,6 +95,14 @@ export default function StructureView({ db, table }: Props) {
 
   return (
     <div className="overflow-auto p-6 space-y-6 bg-[#09090b]">
+      {alterColumn && (
+        <AlterColumnModal
+          db={db} table={table} column={alterColumn}
+          onClose={() => setAlterColumn(null)}
+          onAltered={() => { setAlterColumn(null); loadStructure(); }}
+        />
+      )}
+
       {/* Columns */}
       <div>
         <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">Columns</h3>
@@ -100,7 +110,7 @@ export default function StructureView({ db, table }: Props) {
           <table className="min-w-full text-xs">
             <thead>
               <tr className="border-b border-zinc-800">
-                {['Field', 'Type', 'Null', 'Key', 'Default', 'Extra'].map(h => (
+                {['Field', 'Type', 'Null', 'Key', 'Default', 'Extra', ''].map(h => (
                   <th key={h} className="px-4 py-3 text-left font-medium text-zinc-500">{h}</th>
                 ))}
               </tr>
@@ -135,6 +145,15 @@ export default function StructureView({ db, table }: Props) {
                       {col.Default === null ? <span className="text-zinc-700 italic">NULL</span> : String(col.Default)}
                     </td>
                     <td className="px-4 py-3 text-zinc-500">{col.Extra}</td>
+                    <td className="px-4 py-2">
+                      <button
+                        onClick={() => setAlterColumn(col)}
+                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-zinc-600 hover:text-blue-400 hover:bg-blue-500/10 transition-all"
+                        title="Alter column"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    </td>
                   </tr>
                 );
               })}

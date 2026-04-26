@@ -24,6 +24,7 @@ export default function TableBrowser({ db, table, readonly }: Props) {
   const [showFilters, setShowFilters] = useState(false);
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [selected, setSelected] = useState<Set<number>>(new Set());
 
   const buildUrl = useCallback((p = page) => {
     const sp = new URLSearchParams({ page: String(p), pageSize: String(pageSize), conn: connId });
@@ -45,7 +46,7 @@ export default function TableBrowser({ db, table, readonly }: Props) {
     } finally { setLoading(false); }
   }, [buildUrl, page]);
 
-  useEffect(() => { setPage(1); setFilters({}); setSortCol(null); setSortDir('asc'); }, [db, table, connId]);
+  useEffect(() => { setPage(1); setFilters({}); setSortCol(null); setSortDir('asc'); setSelected(new Set()); }, [db, table, connId]);
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
@@ -87,6 +88,45 @@ export default function TableBrowser({ db, table, readonly }: Props) {
 
   function applyFilters() { setPage(1); load(1); }
   function clearFilters() { setFilters({}); setPage(1); }
+
+  function toggleRow(i: number) {
+    setSelected(s => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; });
+  }
+  function toggleAll() {
+    setSelected(s => s.size === rows.length ? new Set() : new Set(rows.map((_, i) => i)));
+  }
+
+  async function deleteSelected() {
+    if (!confirm(`Delete ${selected.size} selected row${selected.size > 1 ? 's' : ''}?`)) return;
+    for (const i of Array.from(selected)) {
+      const r = await fetch(
+        `/api/databases/${encodeURIComponent(db)}/tables/${encodeURIComponent(table)}?conn=${connId}`,
+        { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pkOf(rows[i])) }
+      );
+      const d = await r.json();
+      if (d.error) { toast(d.error, 'error'); break; }
+    }
+    toast(`${selected.size} row${selected.size > 1 ? 's' : ''} deleted`);
+    setSelected(new Set());
+    load();
+  }
+
+  function exportSelected(format: 'csv' | 'json') {
+    const sel = Array.from(selected).map(i => rows[i]);
+    if (format === 'json') {
+      const blob = new Blob([JSON.stringify(sel, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = `${table}-selected.json`; a.click();
+    } else {
+      if (!sel.length) return;
+      const cols = Object.keys(sel[0]);
+      const esc = (v: unknown) => { const s = String(v ?? ''); return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g,'""')}"` : s; };
+      const csv = [cols.map(esc).join(','), ...sel.map(r => cols.map(c => esc(r[c])).join(','))].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = `${table}-selected.csv`; a.click();
+    }
+  }
 
   const activeFilterCount = Object.values(filters).filter(v => v.trim()).length;
   const totalPages = Math.ceil(total / pageSize);
@@ -168,6 +208,18 @@ export default function TableBrowser({ db, table, readonly }: Props) {
         </div>
       )}
 
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2 bg-blue-500/5 border-b border-blue-500/20 shrink-0">
+          <span className="text-xs text-blue-400 font-medium">{selected.size} row{selected.size > 1 ? 's' : ''} selected</span>
+          <div className="flex gap-2 ml-auto">
+            <button onClick={() => exportSelected('csv')} className="text-xs text-zinc-400 hover:text-zinc-100 bg-zinc-800 hover:bg-zinc-700 px-2.5 py-1 rounded-lg transition-colors">Export CSV</button>
+            <button onClick={() => exportSelected('json')} className="text-xs text-zinc-400 hover:text-zinc-100 bg-zinc-800 hover:bg-zinc-700 px-2.5 py-1 rounded-lg transition-colors">Export JSON</button>
+            {!readonly && <button onClick={deleteSelected} className="text-xs text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 px-2.5 py-1 rounded-lg transition-colors font-medium">Delete selected</button>}
+            <button onClick={() => setSelected(new Set())} className="text-xs text-zinc-500 hover:text-zinc-200 px-2 py-1 rounded-lg transition-colors">Clear</button>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="mx-4 mt-3 p-3 text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg text-sm">{error}</div>
       )}
@@ -183,6 +235,14 @@ export default function TableBrowser({ db, table, readonly }: Props) {
           <table className="min-w-full text-xs border-collapse">
             <thead className="sticky top-0 z-10">
               <tr className="bg-zinc-900 border-b border-zinc-800">
+                <th className="w-10 px-3 py-2.5">
+                  <input
+                    type="checkbox"
+                    checked={rows.length > 0 && selected.size === rows.length}
+                    onChange={toggleAll}
+                    className="accent-blue-500 cursor-pointer"
+                  />
+                </th>
                 {!readonly && <th className="w-12 px-3 py-2.5" />}
                 {columns.map(c => (
                   <th key={c} className="px-3 py-2.5 text-left whitespace-nowrap">
@@ -205,7 +265,10 @@ export default function TableBrowser({ db, table, readonly }: Props) {
             </thead>
             <tbody>
               {rows.map((row, i) => (
-                <tr key={i} className="border-b border-zinc-800/60 hover:bg-zinc-800/40 group transition-colors">
+                <tr key={i} className={`border-b border-zinc-800/60 group transition-colors ${selected.has(i) ? 'bg-blue-500/5' : 'hover:bg-zinc-800/40'}`}>
+                  <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={selected.has(i)} onChange={() => toggleRow(i)} className="accent-blue-500 cursor-pointer" />
+                  </td>
                   {!readonly && (
                     <td className="px-3 py-2">
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
