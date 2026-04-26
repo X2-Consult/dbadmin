@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import net from 'net';
 import mysql from 'mysql2/promise';
 import { Pool as PgPool } from 'pg';
 import { encryptPassword, decryptPassword } from './crypto';
@@ -19,6 +20,11 @@ export interface ConnectionConfig {
   ssl?: boolean;
   sslMode?: SslMode;
   readonly?: boolean;
+  sshHost?: string;
+  sshPort?: number;
+  sshUser?: string;
+  sshPassword?: string;
+  sshKey?: string;
 }
 
 export interface ConnPool {
@@ -29,6 +35,7 @@ export interface ConnPool {
 
 const DATA_FILE = path.join(process.cwd(), 'data', 'connections.json');
 const pools = new Map<string, ConnPool>();
+const tunnels = new Map<string, { server: net.Server; ssh: unknown }>();
 
 function defaultConn(): ConnectionConfig {
   return {
@@ -79,12 +86,54 @@ export function removeConnection(id: string): void {
   if (p?.mysql) p.mysql.end().catch(() => {});
   if (p?.pg) p.pg.end().catch(() => {});
   pools.delete(id);
+  const t = tunnels.get(id);
+  if (t) {
+    t.server.close();
+    (t.ssh as { end?: () => void })?.end?.();
+    tunnels.delete(id);
+  }
 }
 
 function sslOptions(config: ConnectionConfig): object | undefined {
   const mode = config.sslMode ?? (config.ssl ? 'require' : 'disable');
   if (mode === 'disable') return undefined;
   return { rejectUnauthorized: mode === 'verify' };
+}
+
+async function openSshTunnel(config: ConnectionConfig): Promise<number> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Client: SshClient } = require('ssh2') as typeof import('ssh2');
+  return new Promise((resolve, reject) => {
+    const ssh = new SshClient();
+    ssh.on('ready', () => {
+      const server = net.createServer(socket => {
+        ssh.forwardOut(
+          '127.0.0.1', socket.remotePort ?? 0,
+          config.host, config.port,
+          (err, stream) => {
+            if (err) { socket.destroy(); return; }
+            socket.pipe(stream as unknown as NodeJS.WritableStream);
+            (stream as unknown as NodeJS.ReadableStream).pipe(socket);
+          }
+        );
+      });
+      server.listen(0, '127.0.0.1', () => {
+        const port = (server.address() as net.AddressInfo).port;
+        tunnels.set(config.id, { server, ssh });
+        resolve(port);
+      });
+      server.on('error', reject);
+    });
+    ssh.on('error', reject);
+    ssh.connect({
+      host: config.sshHost!,
+      port: config.sshPort ?? 22,
+      username: config.sshUser!,
+      password: config.sshPassword || undefined,
+      privateKey: config.sshKey ? Buffer.from(config.sshKey) : undefined,
+      readyTimeout: 10000,
+    });
+  });
 }
 
 export async function getConnPool(id = 'default'): Promise<ConnPool> {
@@ -95,10 +144,19 @@ export async function getConnPool(id = 'default'): Promise<ConnPool> {
 
   const ssl = sslOptions(config);
 
+  let host = config.host;
+  let port = config.port;
+
+  if (config.sshHost && config.sshUser) {
+    const tunnelPort = await openSshTunnel(config);
+    host = '127.0.0.1';
+    port = tunnelPort;
+  }
+
   if (config.type === 'postgres') {
     const pg = new PgPool({
-      host: config.host,
-      port: config.port,
+      host,
+      port,
       user: config.user,
       password: config.password,
       database: config.database || 'postgres',
@@ -112,8 +170,8 @@ export async function getConnPool(id = 'default'): Promise<ConnPool> {
     const pool: ConnPool = {
       config,
       mysql: mysql.createPool({
-        host: config.host,
-        port: config.port,
+        host,
+        port,
         user: config.user,
         password: config.password,
         database: config.database,

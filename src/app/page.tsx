@@ -25,10 +25,18 @@ import RoutinesView from '@/components/RoutinesView';
 import TriggersView from '@/components/TriggersView';
 import EventsView from '@/components/EventsView';
 import ServerVariables from '@/components/ServerVariables';
-import { LayoutList, Code2, Table2, Wrench, Upload } from 'lucide-react';
+import ViewsView from '@/components/ViewsView';
+import DataSearch from '@/components/DataSearch';
+import ERDiagram from '@/components/ERDiagram';
+import SlowQueryLog from '@/components/SlowQueryLog';
+import SchemaDiff from '@/components/SchemaDiff';
+import { LayoutList, Code2, Table2, Wrench, Upload, Plus, X } from 'lucide-react';
 import { useConn } from '@/context/ConnectionContext';
 
 type TableTab = 'data' | 'structure' | 'sql' | 'ddl';
+
+interface SqlTab { id: number; label: string; db?: string; sql?: string }
+let nextTabId = 1;
 
 function App() {
   const { connId } = useConn();
@@ -42,6 +50,8 @@ function App() {
   const [dropDbTarget, setDropDbTarget] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [dbView, setDbView] = useState<{ db: string; view: string } | null>(null);
+  const [sqlTabs, setSqlTabs] = useState<SqlTab[]>([{ id: nextTabId++, label: 'Query 1' }]);
+  const [activeSqlTab, setActiveSqlTab] = useState<number>(sqlTabs[0].id);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -62,8 +72,32 @@ function App() {
   }
 
   function handleReplay(sql: string, db?: string) {
+    const id = nextTabId++;
+    const label = sql.trim().slice(0, 20).replace(/\n/g, ' ') + (sql.length > 20 ? '…' : '');
+    setSqlTabs(tabs => [...tabs, { id, label, db, sql }]);
+    setActiveSqlTab(id);
     setReplaySql({ sql, db });
     setView('sql');
+  }
+
+  function addSqlTab(db?: string) {
+    const id = nextTabId++;
+    setSqlTabs(tabs => [...tabs, { id, label: `Query ${tabs.length + 1}`, db }]);
+    setActiveSqlTab(id);
+    setView('sql');
+  }
+
+  function closeSqlTab(id: number) {
+    setSqlTabs(tabs => {
+      const next = tabs.filter(t => t.id !== id);
+      if (next.length === 0) {
+        const newId = nextTabId++;
+        setActiveSqlTab(newId);
+        return [{ id: newId, label: 'Query 1' }];
+      }
+      if (activeSqlTab === id) setActiveSqlTab(next[next.length - 1].id);
+      return next;
+    });
   }
 
   const handleSearch = useCallback((db: string, table: string) => {
@@ -144,6 +178,11 @@ function App() {
             {view === 'db-routines' && dbView && <RoutinesView db={dbView.db} />}
             {view === 'db-triggers' && dbView && <TriggersView db={dbView.db} />}
             {view === 'db-events'   && dbView && <EventsView   db={dbView.db} />}
+            {view === 'db-views'    && dbView && <ViewsView    db={dbView.db} />}
+            {view === 'db-search'   && dbView && <DataSearch   db={dbView.db} onNavigate={(db, table) => { onSelect(db, table); }} />}
+            {view === 'db-er'       && dbView && <ERDiagram    db={dbView.db} />}
+            {view === 'slow'     && <SlowQueryLog />}
+            {view === 'schemadiff' && <SchemaDiff />}
 
             {view === 'table' && selected && tableTab === 'data'      && (
               <TableBrowser db={selected.db} table={selected.table} />
@@ -154,16 +193,51 @@ function App() {
             {view === 'table' && selected && tableTab === 'ddl'       && (
               <DDLEditor db={selected.db} table={selected.table} />
             )}
-            {view === 'table' && selected && tableTab === 'sql'       && (
+            {view === 'table' && selected && tableTab === 'sql' && (
               <SqlEditor db={selected.db} onNavigateHistory={() => setView('history')} />
             )}
             {view === 'sql' && (
-              <SqlEditor
-                key={replaySql ? `${replaySql.sql}-${connId}` : 'standalone'}
-                db={replaySql?.db ?? selected?.db}
-                initialSql={replaySql?.sql}
-                onNavigateHistory={() => setView('history')}
-              />
+              <div className="flex flex-col h-full">
+                {/* Tab bar */}
+                <div className="flex items-center border-b border-zinc-800 bg-zinc-900/50 overflow-x-auto shrink-0">
+                  {sqlTabs.map(tab => (
+                    <div key={tab.id}
+                      className={`flex items-center gap-1.5 px-3 py-2 text-xs border-r border-zinc-800 cursor-pointer shrink-0 group transition-colors ${
+                        activeSqlTab === tab.id
+                          ? 'bg-zinc-800 text-zinc-100'
+                          : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
+                      }`}
+                      onClick={() => setActiveSqlTab(tab.id)}
+                    >
+                      <span className="max-w-[120px] truncate">{tab.label}</span>
+                      <button
+                        onClick={e => { e.stopPropagation(); closeSqlTab(tab.id); }}
+                        className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all ml-0.5 rounded"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => addSqlTab(selected?.db)}
+                    className="px-2.5 py-2 text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors shrink-0"
+                    title="New tab"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {/* Active tab editor */}
+                {sqlTabs.map(tab => (
+                  <div key={tab.id} className={`flex-1 overflow-hidden ${activeSqlTab === tab.id ? '' : 'hidden'}`}>
+                    <SqlEditor
+                      key={tab.id}
+                      db={tab.db ?? selected?.db}
+                      initialSql={tab.sql}
+                      onNavigateHistory={() => setView('history')}
+                    />
+                  </div>
+                ))}
+              </div>
             )}
           </ErrorBoundary>
         </div>

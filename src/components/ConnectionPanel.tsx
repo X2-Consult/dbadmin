@@ -19,6 +19,7 @@ const EMPTY_FORM = {
   user: '', password: '', database: '',
   sslMode: 'disable' as SslMode,
   readonly: false,
+  sshHost: '', sshPort: 22, sshUser: '', sshPassword: '', sshKey: '',
 };
 
 interface Props { onClose: () => void; }
@@ -229,6 +230,41 @@ export default function ConnectionPanel({ onClose }: Props) {
                   <label htmlFor="readonly" className="text-xs text-zinc-400 flex items-center gap-1.5">
                     <Lock className="w-3 h-3 text-amber-400" /> Read-only — disable all INSERT / UPDATE / DELETE / DDL
                   </label>
+                </div>
+
+                <div className="col-span-2 border-t border-zinc-800 pt-3">
+                  <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">SSH Tunnel <span className="text-zinc-700 font-normal normal-case">(optional)</span></div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1">SSH Host</label>
+                      <input value={form.sshHost} onChange={e => setForm(f => ({ ...f, sshHost: e.target.value }))}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-600 focus:outline-none focus:border-blue-500 transition-colors"
+                        placeholder="bastion.example.com" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1">SSH Port</label>
+                      <input type="number" value={form.sshPort} onChange={e => setForm(f => ({ ...f, sshPort: parseInt(e.target.value) || 22 }))}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-600 focus:outline-none focus:border-blue-500 transition-colors" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1">SSH User</label>
+                      <input value={form.sshUser} onChange={e => setForm(f => ({ ...f, sshUser: e.target.value }))}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-600 focus:outline-none focus:border-blue-500 transition-colors"
+                        placeholder="ubuntu" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1">SSH Password</label>
+                      <input type="password" value={form.sshPassword} onChange={e => setForm(f => ({ ...f, sshPassword: e.target.value }))}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500 transition-colors"
+                        placeholder="or use private key below" />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-xs font-medium text-zinc-400 mb-1">SSH Private Key <span className="text-zinc-600">(PEM/OpenSSH)</span></label>
+                      <textarea value={form.sshKey} onChange={e => setForm(f => ({ ...f, sshKey: e.target.value }))}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white font-mono placeholder-zinc-600 focus:outline-none focus:border-blue-500 transition-colors resize-none"
+                        rows={3} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" />
+                    </div>
+                  </div>
                 </div>
               </div>
 

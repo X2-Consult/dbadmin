@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ['ssh2'],
   allowedDevOrigins: ['db.spader.co.nz'],
   headers: async () => [
     {

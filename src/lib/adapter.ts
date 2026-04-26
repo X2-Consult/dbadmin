@@ -968,3 +968,289 @@ export async function alterColumn(
     }
   }
 }
+
+// ─── Views ─────────────────────────────────────────────────────────────────────
+
+export async function getViewBody(pool: ConnPool, db: string, name: string): Promise<string> {
+  if (isPg(pool)) {
+    const { rows } = await pool.pg!.query<{ view_definition: string }>(
+      `SELECT view_definition FROM information_schema.views
+       WHERE table_schema = $1 AND table_name = $2`,
+      [db, name]
+    );
+    return rows[0]?.view_definition || '';
+  }
+  const [[row]] = await pool.mysql!.query(
+    `SHOW CREATE VIEW ${qi(db, false)}.${qi(name, false)}`
+  ) as [Array<Record<string, string>>, unknown];
+  return row['Create View'] || '';
+}
+
+export async function createOrReplaceView(
+  pool: ConnPool, db: string, name: string, query: string
+): Promise<void> {
+  assertWritable(pool);
+  const pg = isPg(pool);
+  const safeName = name.replace(/[^\w$]/g, '');
+  if (pg) {
+    await pool.pg!.query(`SET search_path TO ${qi(db, true)}`);
+    await pool.pg!.query(
+      `CREATE OR REPLACE VIEW ${qi(db, true)}.${qi(safeName, true)} AS ${query}`
+    );
+  } else {
+    await pool.mysql!.query(`USE ${qi(db, false)}`);
+    await pool.mysql!.query(
+      `CREATE OR REPLACE VIEW ${qi(db, false)}.${qi(safeName, false)} AS ${query}`
+    );
+  }
+}
+
+export async function dropView(pool: ConnPool, db: string, name: string): Promise<void> {
+  assertWritable(pool);
+  const pg = isPg(pool);
+  const sql = `DROP VIEW IF EXISTS ${qi(db, pg)}.${qi(name, pg)}`;
+  if (pg) await pool.pg!.query(sql); else await pool.mysql!.query(sql);
+}
+
+// ─── Copy table ───────────────────────────────────────────────────────────────
+
+export async function copyTable(
+  pool: ConnPool, db: string, srcTable: string,
+  destTable: string, includeData: boolean
+): Promise<void> {
+  assertWritable(pool);
+  const pg = isPg(pool);
+  const src = qi(db, pg) + '.' + qi(srcTable, pg);
+  const dst = qi(db, pg) + '.' + qi(destTable, pg);
+  if (pg) {
+    await pool.pg!.query(`CREATE TABLE ${dst} (LIKE ${src} INCLUDING ALL)`);
+    if (includeData) await pool.pg!.query(`INSERT INTO ${dst} SELECT * FROM ${src}`);
+  } else {
+    if (includeData) {
+      await pool.mysql!.query(`CREATE TABLE ${dst} SELECT * FROM ${src}`);
+    } else {
+      await pool.mysql!.query(`CREATE TABLE ${dst} LIKE ${src}`);
+    }
+  }
+}
+
+// ─── Full database search ─────────────────────────────────────────────────────
+
+export interface SearchHit {
+  table: string;
+  column: string;
+  value: string;
+  pk: Record<string, unknown>;
+}
+
+export async function searchDatabase(
+  pool: ConnPool, db: string, term: string, maxHits = 200
+): Promise<SearchHit[]> {
+  const pg = isPg(pool);
+  const tables = await listTables(pool, db);
+  const hits: SearchHit[] = [];
+  const escaped = `%${term}%`;
+
+  for (const table of tables) {
+    if (hits.length >= maxHits) break;
+    const { columns } = await getTableStructure(pool, db, table);
+    const pkCols = columns.filter(c => c.Key === 'PRI').map(c => c.Field);
+    const textCols = columns.filter(c => {
+      const t = c.Type.toLowerCase();
+      return t.includes('char') || t.includes('text') || t.includes('varchar') ||
+             t.includes('enum') || t === 'tinytext' || t === 'mediumtext' || t === 'longtext';
+    });
+    if (!textCols.length) continue;
+
+    const q = qi(db, pg) + '.' + qi(table, pg);
+    const selectCols = [...new Set([...pkCols, ...textCols.map(c => c.Field)])].map(c => qi(c, pg)).join(', ');
+
+    if (pg) {
+      const where = textCols.map((c, i) => `${qi(c.Field, true)}::text ILIKE $${i + 1}`).join(' OR ');
+      const params = textCols.map(() => escaped);
+      const { rows } = await pool.pg!.query(`SELECT ${selectCols} FROM ${q} WHERE ${where} LIMIT 50`, params);
+      for (const row of rows) {
+        for (const col of textCols) {
+          const val = row[col.Field];
+          if (val != null && String(val).toLowerCase().includes(term.toLowerCase())) {
+            const pk: Record<string, unknown> = {};
+            pkCols.forEach(k => { pk[k] = row[k]; });
+            hits.push({ table, column: col.Field, value: String(val), pk });
+            if (hits.length >= maxHits) break;
+          }
+        }
+        if (hits.length >= maxHits) break;
+      }
+    } else {
+      const where = textCols.map(c => `${qi(c.Field, false)} LIKE ?`).join(' OR ');
+      const params = textCols.map(() => escaped);
+      const [rows] = await pool.mysql!.execute(
+        `SELECT ${selectCols} FROM ${q} WHERE ${where} LIMIT 50`, params
+      ) as [Record<string, unknown>[], unknown];
+      for (const row of rows) {
+        for (const col of textCols) {
+          const val = row[col.Field];
+          if (val != null && String(val).toLowerCase().includes(term.toLowerCase())) {
+            const pk: Record<string, unknown> = {};
+            pkCols.forEach(k => { pk[k] = row[k]; });
+            hits.push({ table, column: col.Field, value: String(val), pk });
+            if (hits.length >= maxHits) break;
+          }
+        }
+        if (hits.length >= maxHits) break;
+      }
+    }
+  }
+  return hits;
+}
+
+// ─── ER diagram data ──────────────────────────────────────────────────────────
+
+export interface ERTable {
+  name: string;
+  columns: Array<{ name: string; type: string; pk: boolean; fk: boolean }>;
+}
+
+export interface ERRelation {
+  fromTable: string;
+  fromColumn: string;
+  toTable: string;
+  toColumn: string;
+}
+
+export async function getERData(
+  pool: ConnPool, db: string
+): Promise<{ tables: ERTable[]; relations: ERRelation[] }> {
+  const tableNames = await listTables(pool, db);
+  const tables: ERTable[] = [];
+  const relations: ERRelation[] = [];
+
+  await Promise.all(tableNames.map(async name => {
+    const { columns, foreignKeys } = await getTableStructure(pool, db, name);
+    const fkCols = new Set(foreignKeys.map(fk => fk.column));
+    tables.push({
+      name,
+      columns: columns.map(c => ({
+        name: c.Field,
+        type: c.Type,
+        pk: c.Key === 'PRI',
+        fk: fkCols.has(c.Field),
+      })),
+    });
+    for (const fk of foreignKeys) {
+      relations.push({
+        fromTable: name,
+        fromColumn: fk.column,
+        toTable: fk.ref_table,
+        toColumn: fk.ref_column,
+      });
+    }
+  }));
+
+  tables.sort((a, b) => a.name.localeCompare(b.name));
+  return { tables, relations };
+}
+
+// ─── Top queries / slow query log ─────────────────────────────────────────────
+
+export interface SlowQuery {
+  query: string;
+  calls: number;
+  avgMs: number;
+  maxMs: number;
+  totalMs: number;
+}
+
+export async function getTopQueries(pool: ConnPool): Promise<SlowQuery[]> {
+  if (isPg(pool)) {
+    try {
+      const { rows } = await pool.pg!.query<{
+        query: string; calls: string; mean_exec_time: string;
+        max_exec_time: string; total_exec_time: string;
+      }>(
+        `SELECT query, calls, mean_exec_time, max_exec_time, total_exec_time
+         FROM pg_stat_statements
+         ORDER BY mean_exec_time DESC LIMIT 50`
+      );
+      return rows.map(r => ({
+        query: r.query,
+        calls: Number(r.calls),
+        avgMs: Math.round(Number(r.mean_exec_time)),
+        maxMs: Math.round(Number(r.max_exec_time)),
+        totalMs: Math.round(Number(r.total_exec_time)),
+      }));
+    } catch {
+      return [];
+    }
+  }
+  try {
+    const [rows] = await pool.mysql!.query(
+      `SELECT DIGEST_TEXT AS query,
+              COUNT_STAR AS calls,
+              ROUND(AVG_TIMER_WAIT / 1000000000, 2) AS avgMs,
+              ROUND(MAX_TIMER_WAIT / 1000000000, 2) AS maxMs,
+              ROUND(SUM_TIMER_WAIT / 1000000000, 2) AS totalMs
+       FROM performance_schema.events_statements_summary_by_digest
+       WHERE DIGEST_TEXT IS NOT NULL
+       ORDER BY AVG_TIMER_WAIT DESC LIMIT 50`
+    ) as [Array<{ query: string; calls: number; avgMs: number; maxMs: number; totalMs: number }>, unknown];
+    return rows.map(r => ({
+      query: r.query,
+      calls: Number(r.calls),
+      avgMs: Number(r.avgMs),
+      maxMs: Number(r.maxMs),
+      totalMs: Number(r.totalMs),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// ─── Schema diff ──────────────────────────────────────────────────────────────
+
+export interface SchemaDiffResult {
+  onlyInA: string[];
+  onlyInB: string[];
+  modified: Array<{
+    table: string;
+    addedColumns: string[];
+    removedColumns: string[];
+    changedColumns: Array<{ name: string; typeA: string; typeB: string }>;
+  }>;
+}
+
+export async function getSchemaDiff(
+  poolA: ConnPool, dbA: string,
+  poolB: ConnPool, dbB: string
+): Promise<SchemaDiffResult> {
+  const [tablesA, tablesB] = await Promise.all([
+    listTables(poolA, dbA),
+    listTables(poolB, dbB),
+  ]);
+  const setA = new Set(tablesA);
+  const setB = new Set(tablesB);
+
+  const onlyInA = tablesA.filter(t => !setB.has(t));
+  const onlyInB = tablesB.filter(t => !setA.has(t));
+  const shared = tablesA.filter(t => setB.has(t));
+
+  const modified: SchemaDiffResult['modified'] = [];
+  await Promise.all(shared.map(async table => {
+    const [{ columns: colsA }, { columns: colsB }] = await Promise.all([
+      getTableStructure(poolA, dbA, table),
+      getTableStructure(poolB, dbB, table),
+    ]);
+    const mapA = new Map(colsA.map(c => [c.Field, c.Type]));
+    const mapB = new Map(colsB.map(c => [c.Field, c.Type]));
+    const addedColumns = colsB.filter(c => !mapA.has(c.Field)).map(c => c.Field);
+    const removedColumns = colsA.filter(c => !mapB.has(c.Field)).map(c => c.Field);
+    const changedColumns = colsA
+      .filter(c => mapB.has(c.Field) && mapB.get(c.Field) !== c.Type)
+      .map(c => ({ name: c.Field, typeA: c.Type, typeB: mapB.get(c.Field)! }));
+    if (addedColumns.length || removedColumns.length || changedColumns.length) {
+      modified.push({ table, addedColumns, removedColumns, changedColumns });
+    }
+  }));
+
+  return { onlyInA, onlyInB, modified };
+}

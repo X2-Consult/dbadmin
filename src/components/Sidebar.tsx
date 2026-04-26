@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown, Database, Table2, Users, BarChart2, Activity, LogOut, Layers, ChevronsUpDown, Eye, Lock, HardDrive, Search, Bookmark, BookOpen, Plus, Trash2, Cpu, Workflow, Zap, CalendarClock, Settings2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, Database, Table2, Users, BarChart2, Activity, LogOut, Layers, ChevronsUpDown, Eye, Lock, HardDrive, Search, Bookmark, BookOpen, Plus, Trash2, Cpu, Workflow, Zap, CalendarClock, Settings2, Network, Gauge, GitCompare, SearchCode } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useConn } from '@/context/ConnectionContext';
 import ConnectionPanel from './ConnectionPanel';
@@ -132,6 +132,8 @@ export default function Sidebar({ selected, onSelect, activeView, onView, onSear
             { id: 'variables',  label: 'Variables',  icon: Settings2  },
             { id: 'saved',      label: 'Saved',      icon: Bookmark   },
             { id: 'backup',     label: 'Backup',     icon: HardDrive  },
+            { id: 'slow',       label: 'Top Queries',icon: Gauge      },
+            { id: 'schemadiff', label: 'Schema Diff',icon: GitCompare },
             { id: 'help',       label: 'Help',       icon: BookOpen   },
           ].map(({ id, label, icon: Icon }) => (
             <button key={id} onClick={() => onView(id)}
@@ -203,6 +205,9 @@ export default function Sidebar({ selected, onSelect, activeView, onView, onSear
                     { id: 'routines', label: 'Routines', icon: Workflow },
                     { id: 'triggers', label: 'Triggers', icon: Zap },
                     { id: 'events',   label: 'Events',   icon: CalendarClock },
+                    { id: 'views',    label: 'Views',    icon: Eye },
+                    { id: 'search',   label: 'Search Data', icon: SearchCode },
+                    { id: 'er',       label: 'ER Diagram',  icon: Network },
                   ].map(({ id, label, icon: Icon }) => (
                     <button key={id}
                       onClick={() => onDbView(db, id)}

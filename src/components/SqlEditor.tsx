@@ -1,7 +1,7 @@
 'use client';
 import { useState, useRef, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { Play, Clock, AlertCircle, CheckCircle2, Search, Download, FlaskConical, RotateCcw, ShieldAlert, Bookmark, Check } from 'lucide-react';
+import { Play, Clock, AlertCircle, CheckCircle2, Search, Download, FlaskConical, RotateCcw, ShieldAlert, Bookmark, Check, BarChart2 } from 'lucide-react';
 import { useConn } from '@/context/ConnectionContext';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
@@ -43,6 +43,76 @@ function downloadCSV(data: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+function downloadJSON(rows: Record<string, unknown>[], filename: string) {
+  const blob = new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function ResultChart({ rows, columns }: { rows: Record<string, unknown>[]; columns: string[] }) {
+  const numericCols = columns.filter(c => rows.slice(0, 20).every(r => r[c] === null || !isNaN(Number(r[c]))));
+  const labelCols = columns.filter(c => !numericCols.includes(c));
+  const [xCol, setXCol] = useState(labelCols[0] ?? columns[0]);
+  const [yCol, setYCol] = useState(numericCols[0] ?? columns[1] ?? columns[0]);
+
+  const data = rows.slice(0, 50);
+  const values = data.map(r => Number(r[yCol]) || 0);
+  const maxVal = Math.max(...values, 1);
+  const chartH = 180;
+  const barW = Math.max(8, Math.min(40, Math.floor(560 / data.length) - 4));
+
+  return (
+    <div className="px-4 py-3 border-t border-zinc-800">
+      <div className="flex items-center gap-3 mb-3 flex-wrap">
+        <span className="text-xs text-zinc-500">X axis:</span>
+        <select value={xCol} onChange={e => setXCol(e.target.value)}
+          className="text-xs bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-zinc-200 focus:outline-none">
+          {columns.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <span className="text-xs text-zinc-500">Y axis:</span>
+        <select value={yCol} onChange={e => setYCol(e.target.value)}
+          className="text-xs bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-zinc-200 focus:outline-none">
+          {columns.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <span className="text-xs text-zinc-600 ml-auto">{data.length} bars (max 50)</span>
+      </div>
+      <div className="overflow-x-auto">
+        <svg width={Math.max(600, data.length * (barW + 4) + 60)} height={chartH + 50}>
+          {/* Grid lines */}
+          {[0, 0.25, 0.5, 0.75, 1].map(pct => (
+            <g key={pct}>
+              <line x1="40" y1={chartH * (1 - pct)} x2={data.length * (barW + 4) + 50} y2={chartH * (1 - pct)}
+                stroke="#27272a" strokeWidth="1" />
+              <text x="35" y={chartH * (1 - pct) + 4} fill="#71717a" fontSize="9" textAnchor="end">
+                {Math.round(maxVal * pct)}
+              </text>
+            </g>
+          ))}
+          {/* Bars */}
+          {data.map((row, i) => {
+            const val = Number(row[yCol]) || 0;
+            const h = Math.max(1, (val / maxVal) * chartH);
+            const x = 44 + i * (barW + 4);
+            const label = String(row[xCol] ?? '').slice(0, 8);
+            return (
+              <g key={i}>
+                <rect x={x} y={chartH - h} width={barW} height={h} rx="2" fill="#3b82f6" opacity="0.8" />
+                <title>{label}: {val}</title>
+                <text x={x + barW / 2} y={chartH + 14} fill="#71717a" fontSize="8" textAnchor="middle"
+                  transform={`rotate(-35,${x + barW / 2},${chartH + 14})`}>
+                  {label}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 export default function SqlEditor({ db, initialSql, onNavigateHistory }: Props) {
   const { connId } = useConn();
   const [sql, setSql] = useState(initialSql ?? (db ? `SELECT * FROM ` : 'SELECT 1;'));
@@ -50,6 +120,7 @@ export default function SqlEditor({ db, initialSql, onNavigateHistory }: Props) 
   const [running, setRunning] = useState(false);
   const [dryRunMode, setDryRunMode] = useState(false);
   const [confirmPending, setConfirmPending] = useState<string | null>(null);
+  const [showChart, setShowChart] = useState(false);
   const [showSavePanel, setShowSavePanel] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -156,12 +227,28 @@ export default function SqlEditor({ db, initialSql, onNavigateHistory }: Props) 
         </button>
 
         {result?.rows && result.rows.length > 0 && (
-          <button
-            onClick={() => downloadCSV(rowsToCSV(result.rows!), 'query-result.csv')}
-            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-100 bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg transition-colors"
-          >
-            <Download className="w-3.5 h-3.5" /> Export CSV
-          </button>
+          <>
+            <button
+              onClick={() => downloadCSV(rowsToCSV(result.rows!), 'query-result.csv')}
+              className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-100 bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" /> CSV
+            </button>
+            <button
+              onClick={() => downloadJSON(result.rows!, 'query-result.json')}
+              className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-100 bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" /> JSON
+            </button>
+            <button
+              onClick={() => setShowChart(c => !c)}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                showChart ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'text-zinc-400 hover:text-zinc-100 bg-zinc-800 hover:bg-zinc-700'
+              }`}
+            >
+              <BarChart2 className="w-3.5 h-3.5" /> Chart
+            </button>
+          </>
         )}
 
         <button
@@ -347,6 +434,10 @@ export default function SqlEditor({ db, initialSql, onNavigateHistory }: Props) 
               </tbody>
             </table>
           </div>
+        )}
+
+        {showChart && result?.rows && columns.length > 1 && (
+          <ResultChart rows={result.rows as Record<string, unknown>[]} columns={columns} />
         )}
 
         {result?.rows && columns.length === 0 && (

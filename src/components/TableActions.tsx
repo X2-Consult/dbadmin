@@ -1,6 +1,6 @@
 'use client';
 import { useState, useRef, useEffect } from 'react';
-import { MoreHorizontal, Pencil, Trash2, Eraser, Loader2, ShieldAlert, AlertTriangle, Wrench } from 'lucide-react';
+import { MoreHorizontal, Pencil, Trash2, Eraser, Loader2, ShieldAlert, AlertTriangle, Wrench, Copy } from 'lucide-react';
 import { useConn } from '@/context/ConnectionContext';
 import { useToast } from '@/context/ToastContext';
 
@@ -12,7 +12,7 @@ interface Props {
   onTruncated: () => void;
 }
 
-type Modal = 'rename' | 'truncate-confirm' | 'drop-1' | 'drop-2' | 'maintenance' | null;
+type Modal = 'rename' | 'truncate-confirm' | 'drop-1' | 'drop-2' | 'maintenance' | 'copy' | null;
 
 export default function TableActions({ db, table, onRenamed, onDropped, onTruncated }: Props) {
   const { connId } = useConn();
@@ -22,6 +22,8 @@ export default function TableActions({ db, table, onRenamed, onDropped, onTrunca
   const [maintOp, setMaintOp] = useState<string>('');
   const [maintResult, setMaintResult] = useState<Array<Record<string, string>>>([]);
   const [newName, setNewName] = useState('');
+  const [copyName, setCopyName] = useState('');
+  const [copyData, setCopyData] = useState(false);
   const [busy, setBusy] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -77,6 +79,21 @@ export default function TableActions({ db, table, onRenamed, onDropped, onTrunca
     toast(`${op} complete`);
   }
 
+  async function copyTable() {
+    if (!copyName.trim()) return;
+    setBusy(true);
+    const r = await fetch(`${base}/copy${qs}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ destTable: copyName.trim(), includeData: copyData }),
+    });
+    const d = await r.json();
+    setBusy(false);
+    if (d.error) { toast(d.error, 'error'); return; }
+    toast(`Table copied to "${copyName.trim()}"`);
+    setModal(null);
+  }
+
   async function drop() {
     setBusy(true);
     const r = await fetch(`${base}/drop${qs}`, { method: 'POST' });
@@ -107,6 +124,12 @@ export default function TableActions({ db, table, onRenamed, onDropped, onTrunca
               <Pencil className="w-3.5 h-3.5 text-zinc-500" /> Rename table
             </button>
             <button
+              onClick={() => { setCopyName(`${table}_copy`); setCopyData(false); setModal('copy'); setOpen(false); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+            >
+              <Copy className="w-3.5 h-3.5 text-zinc-500" /> Copy table
+            </button>
+            <button
               onClick={() => { setModal('truncate-confirm'); setOpen(false); }}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
             >
@@ -128,6 +151,40 @@ export default function TableActions({ db, table, onRenamed, onDropped, onTrunca
           </div>
         )}
       </div>
+
+      {/* Copy modal */}
+      {modal === 'copy' && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4">
+            <h2 className="text-sm font-semibold text-white">Copy table</h2>
+            <div>
+              <label className="text-xs text-zinc-500 mb-1.5 block">Source: <span className="font-mono text-zinc-300">{table}</span></label>
+              <input
+                autoFocus
+                value={copyName}
+                onChange={e => setCopyName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && copyTable()}
+                placeholder="new_table_name"
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
+              <input type="checkbox" checked={copyData} onChange={e => setCopyData(e.target.checked)} className="w-3.5 h-3.5 accent-blue-500" />
+              Include data (not just structure)
+            </label>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setModal(null)} className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-100 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors">Cancel</button>
+              <button
+                onClick={copyTable}
+                disabled={busy || !copyName.trim()}
+                className="flex items-center gap-1.5 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg transition-colors font-medium"
+              >
+                {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Copy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Maintenance modal */}
       {modal === 'maintenance' && (
