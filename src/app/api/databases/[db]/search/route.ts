@@ -8,6 +8,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ db:
   try {
     const { term } = await req.json();
     if (!term?.trim()) return NextResponse.json({ hits: [] });
+    if (term.trim().length > 200) return NextResponse.json({ error: 'Search term too long' }, { status: 400 });
     const pool = await getConnPool(connId);
     const hits = await searchDatabase(pool, db, term.trim());
     return NextResponse.json({ hits });

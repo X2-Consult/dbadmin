@@ -14,7 +14,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ db: 
   }
 
   const enc = new TextEncoder();
-  const filename = `${db}-${new Date().toISOString().slice(0, 10)}.sql`;
+  const safeDb = db.replace(/[^A-Za-z0-9_\-]/g, '_');
+  const filename = `${safeDb}-${new Date().toISOString().slice(0, 10)}.sql`;
 
   const stream = new ReadableStream({
     async start(controller) {

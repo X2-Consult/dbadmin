@@ -4,7 +4,7 @@ import type { ConnectionConfig } from '@/lib/connections';
 import { randomUUID } from 'crypto';
 
 export async function GET() {
-  const conns = listConnections().map(({ password: _, ...rest }) => rest);
+  const conns = listConnections().map(({ password: _, sshPassword: _sp, sshKey: _sk, ...rest }) => rest);
   return NextResponse.json({ connections: conns });
 }
 
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
       await pool.mysql!.query('SELECT 1');
     }
     saveConnection(conn);
-    const { password: _, ...safe } = conn;
+    const { password: _, sshPassword: _sp, sshKey: _sk, ...safe } = conn;
     return NextResponse.json({ connection: safe });
   } catch (e: unknown) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });

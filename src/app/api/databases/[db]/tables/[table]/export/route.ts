@@ -39,6 +39,7 @@ function toCSV(rows: unknown[]): string {
 
 export async function GET(req: NextRequest, { params }: { params: Params }) {
   const { db, table } = await params;
+  const safeTable = table.replace(/[^A-Za-z0-9_\-]/g, '_');
   const sp = req.nextUrl.searchParams;
   const connId = sp.get('conn') || 'default';
   const format = sp.get('format') || 'csv';
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
       return new NextResponse(JSON.stringify(rows, null, 2), {
         headers: {
           'Content-Type': 'application/json',
-          'Content-Disposition': `attachment; filename="${table}.json"`,
+          'Content-Disposition': `attachment; filename="${safeTable}.json"`,
         },
       });
     }
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
       return new NextResponse(toSQLInserts(table, rows), {
         headers: {
           'Content-Type': 'text/plain',
-          'Content-Disposition': `attachment; filename="${table}.sql"`,
+          'Content-Disposition': `attachment; filename="${safeTable}.sql"`,
         },
       });
     }
@@ -66,7 +67,7 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
     return new NextResponse(csv, {
       headers: {
         'Content-Type': 'text/csv',
-        'Content-Disposition': `attachment; filename="${table}.csv"`,
+        'Content-Disposition': `attachment; filename="${safeTable}.csv"`,
       },
     });
   } catch (e: unknown) {

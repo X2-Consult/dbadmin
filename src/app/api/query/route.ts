@@ -9,6 +9,10 @@ export async function POST(req: NextRequest) {
   try {
     const pool = await getConnPool(conn);
 
+    if (pool.config.readonly && !explain && !dryRun) {
+      return NextResponse.json({ error: 'Connection is read-only' }, { status: 403 });
+    }
+
     if (explain) {
       const result = await execExplain(pool, sql, db);
       return NextResponse.json(result);

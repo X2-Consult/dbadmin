@@ -2,7 +2,9 @@ export const COOKIE = 'dbadmin_session';
 const TTL_SECONDS = 8 * 3600;
 
 export function getSecret(): string {
-  return process.env.SESSION_SECRET || process.env.UI_PASSWORD || 'dev-secret';
+  const s = process.env.SESSION_SECRET || process.env.UI_PASSWORD;
+  if (!s) throw new Error('SESSION_SECRET is not set — run install.sh to configure the application');
+  return s;
 }
 
 export function isSecureContext(): boolean {
