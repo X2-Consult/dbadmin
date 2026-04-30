@@ -16,6 +16,9 @@ echo ""
 [ -f "package.json" ] && [ -f "server.mjs" ] || \
   fail "Run this script from the DB Admin project root directory"
 
+[ "$(id -u)" -eq 0 ] && \
+  fail "Do not run this script as root/sudo — it will break git SSH auth. Run as the project owner instead."
+
 # ─── Check for updates ──────────────────────────────────────────────────────
 echo -e "${B}Checking for updates…${N}"
 git fetch origin
