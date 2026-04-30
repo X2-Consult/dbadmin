@@ -11,14 +11,28 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const body: Omit<ConnectionConfig, 'id'> & { id?: string } = await req.json();
-  const conn: ConnectionConfig = {
+  let conn: ConnectionConfig = {
     ...body,
     id: body.id || randomUUID(),
     port: Number(body.port),
   };
+
+  // When editing, fill in credentials that weren't re-entered
+  if (body.id && (conn.password === '' || conn.sshPassword === '' || conn.sshKey === '')) {
+    const existing = listConnections().find(c => c.id === body.id);
+    if (existing) {
+      conn = {
+        ...conn,
+        password:    conn.password === ''    ? existing.password    : conn.password,
+        sshPassword: conn.sshPassword === '' ? existing.sshPassword : conn.sshPassword,
+        sshKey:      conn.sshKey === ''      ? existing.sshKey      : conn.sshKey,
+      };
+    }
+  }
+
   try {
-    // Test the connection before saving
-    const pool = await getConnPool(conn.id);
+    // Pass config directly so getConnPool doesn't need it saved first
+    const pool = await getConnPool(conn);
     if (conn.type === 'postgres') {
       await pool.pg!.query('SELECT 1');
     } else {

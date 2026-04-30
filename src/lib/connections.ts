@@ -178,10 +178,14 @@ async function openSshTunnel(config: ConnectionConfig): Promise<number> {
   });
 }
 
-export async function getConnPool(id = 'default'): Promise<ConnPool> {
-  if (pools.has(id)) return pools.get(id)!;
+export async function getConnPool(idOrConfig: string | ConnectionConfig = 'default'): Promise<ConnPool> {
+  const id = typeof idOrConfig === 'string' ? idOrConfig : idOrConfig.id;
 
-  const config = listConnections().find(c => c.id === id);
+  if (typeof idOrConfig === 'string' && pools.has(id)) return pools.get(id)!;
+
+  const config = typeof idOrConfig === 'object'
+    ? idOrConfig
+    : listConnections().find(c => c.id === id);
   if (!config) throw new Error(`Connection '${id}' not found`);
 
   const ssl = sslOptions(config);
@@ -195,6 +199,8 @@ export async function getConnPool(id = 'default'): Promise<ConnPool> {
     port = tunnelPort;
   }
 
+  const cache = typeof idOrConfig === 'string';
+
   if (config.type === 'postgres') {
     const pg = new PgPool({
       host,
@@ -206,7 +212,7 @@ export async function getConnPool(id = 'default'): Promise<ConnPool> {
       max: 10,
     });
     const pool: ConnPool = { config, pg };
-    pools.set(id, pool);
+    if (cache) pools.set(id, pool);
     return pool;
   } else {
     const pool: ConnPool = {
@@ -224,7 +230,7 @@ export async function getConnPool(id = 'default'): Promise<ConnPool> {
         ssl: ssl as Record<string, unknown>,
       }),
     };
-    pools.set(id, pool);
+    if (cache) pools.set(id, pool);
     return pool;
   }
 }
