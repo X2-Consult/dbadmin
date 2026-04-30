@@ -16,7 +16,7 @@ const TYPE_DEFAULTS: Record<DbType, { port: number; label: string; color: string
 const EMPTY_FORM = {
   name: '', type: 'mariadb' as DbType,
   host: '127.0.0.1', port: 3306,
-  user: '', password: '', database: '',
+  user: '', password: '', noPassword: false, database: '',
   sslMode: 'disable' as SslMode,
   readonly: false,
   sshHost: '', sshPort: 22, sshUser: '', sshPassword: '', sshKey: '',
@@ -71,7 +71,8 @@ export default function ConnectionPanel({ onClose }: Props) {
     setSaving(true);
     setSaveError('');
     setTestResult(null);
-    const body = editingId ? { ...form, id: editingId } : form;
+    const { noPassword, ...formData } = form;
+    const body = editingId ? { ...formData, id: editingId, noPassword } : { ...formData, noPassword };
     const r = await fetch('/api/connections', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -92,7 +93,7 @@ export default function ConnectionPanel({ onClose }: Props) {
     setForm({
       name: c.name, type: c.type,
       host: c.host, port: c.port,
-      user: c.user, password: '',
+      user: c.user, password: '', noPassword: false,
       database: c.database ?? '',
       sslMode: c.sslMode ?? 'disable',
       readonly: c.readonly ?? false,
@@ -217,10 +218,20 @@ export default function ConnectionPanel({ onClose }: Props) {
                     placeholder="root" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1">Password</label>
-                  <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 transition-colors"
-                    placeholder={editingId ? 'Leave blank to keep current' : ''} />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-zinc-400">Password</label>
+                    <label className="flex items-center gap-1.5 text-xs text-zinc-500 cursor-pointer select-none">
+                      <input type="checkbox" checked={form.noPassword}
+                        onChange={e => setForm(f => ({ ...f, noPassword: e.target.checked, password: '' }))}
+                        className="w-3 h-3 accent-zinc-400" />
+                      No password
+                    </label>
+                  </div>
+                  <input type="password" value={form.password}
+                    onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                    disabled={form.noPassword}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    placeholder={form.noPassword ? 'No password' : editingId ? 'Leave blank to keep current' : ''} />
                 </div>
                 {form.type === 'postgres' && (
                   <div className="col-span-2">

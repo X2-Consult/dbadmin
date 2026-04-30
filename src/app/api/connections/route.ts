@@ -10,15 +10,15 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const body: Omit<ConnectionConfig, 'id'> & { id?: string } = await req.json();
+  const body: Omit<ConnectionConfig, 'id'> & { id?: string; noPassword?: boolean } = await req.json();
   let conn: ConnectionConfig = {
     ...body,
     id: body.id || randomUUID(),
     port: Number(body.port),
   };
 
-  // When editing, fill in credentials that weren't re-entered
-  if (body.id && (conn.password === '' || conn.sshPassword === '' || conn.sshKey === '')) {
+  // When editing, fill in credentials that weren't re-entered (unless noPassword is set)
+  if (body.id && !body.noPassword && (conn.password === '' || conn.sshPassword === '' || conn.sshKey === '')) {
     const existing = listConnections().find(c => c.id === body.id);
     if (existing) {
       conn = {
