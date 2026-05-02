@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Server, Database, HardDrive, Zap, Clock } from 'lucide-react';
+import { RefreshCw, Server, Database, HardDrive, Zap, Clock, Activity, BarChart2, AlertTriangle } from 'lucide-react';
 import { useConn } from '@/context/ConnectionContext';
 
 interface DbRow {
@@ -12,7 +12,14 @@ interface DbRow {
   estimatedRows: number;
 }
 interface OverviewData {
-  server: { version: string; uptime: number; maxConnections: number; openConnections: number };
+  server: {
+    version: string; uptime: number; maxConnections: number; openConnections: number;
+    cacheHitRate?: number;
+    totalCommits?: number;
+    totalRollbacks?: number;
+    deadlocks?: number;
+    tempBytes?: number;
+  };
   databases: DbRow[];
 }
 
@@ -119,6 +126,41 @@ export default function Overview() {
             </div>
           </div>
 
+          {/* PostgreSQL health stats */}
+          {data.server.cacheHitRate !== undefined && (
+            <div>
+              <p className="text-[11px] font-semibold text-zinc-600 uppercase tracking-widest mb-3">Health</p>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <StatCard
+                  label="Cache Hit Rate"
+                  value={`${data.server.cacheHitRate ?? 0}%`}
+                  sub="buffer cache efficiency"
+                  icon={Activity}
+                  accent={data.server.cacheHitRate != null && data.server.cacheHitRate >= 95}
+                />
+                <StatCard
+                  label="Commits"
+                  value={(data.server.totalCommits ?? 0).toLocaleString()}
+                  sub="total since start"
+                  icon={BarChart2}
+                />
+                <StatCard
+                  label="Rollbacks"
+                  value={(data.server.totalRollbacks ?? 0).toLocaleString()}
+                  sub="total since start"
+                  icon={BarChart2}
+                />
+                <StatCard
+                  label="Deadlocks"
+                  value={(data.server.deadlocks ?? 0).toLocaleString()}
+                  sub={data.server.tempBytes ? `${formatBytes(data.server.tempBytes)} temp` : 'total since start'}
+                  icon={AlertTriangle}
+                  accent={(data.server.deadlocks ?? 0) > 0}
+                />
+              </div>
+            </div>
+          )}
+
           {/* Databases */}
           <div>
             <p className="text-[11px] font-semibold text-zinc-600 uppercase tracking-widest mb-3">Databases</p>
@@ -155,12 +197,12 @@ export default function Overview() {
                           <span className="text-zinc-400 tabular-nums text-right w-16">{formatBytes(db.totalSize)}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-right text-zinc-400 tabular-nums">{db.tableCount}</td>
+                      <td className="px-4 py-3 text-right text-zinc-400 tabular-nums">{db.tableCount || '—'}</td>
                       <td className="px-4 py-3 text-right text-zinc-500 tabular-nums">
                         {db.estimatedRows ? `~${db.estimatedRows.toLocaleString()}` : '—'}
                       </td>
-                      <td className="px-4 py-3 text-right text-zinc-500 tabular-nums">{formatBytes(db.dataSize)}</td>
-                      <td className="px-4 py-3 text-right text-zinc-500 tabular-nums">{formatBytes(db.indexSize)}</td>
+                      <td className="px-4 py-3 text-right text-zinc-500 tabular-nums">{db.dataSize ? formatBytes(db.dataSize) : '—'}</td>
+                      <td className="px-4 py-3 text-right text-zinc-500 tabular-nums">{db.indexSize ? formatBytes(db.indexSize) : '—'}</td>
                     </tr>
                   ))}
                 </tbody>

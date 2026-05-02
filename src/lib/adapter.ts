@@ -346,7 +346,14 @@ export async function execExplain(pool: ConnPool, sql: string, db?: string): Pro
 // ─── Overview stats ───────────────────────────────────────────────────────────
 
 export interface OverviewStats {
-  server: { version: string; uptime: number; maxConnections: number; openConnections: number };
+  server: {
+    version: string; uptime: number; maxConnections: number; openConnections: number;
+    cacheHitRate?: number;
+    totalCommits?: number;
+    totalRollbacks?: number;
+    deadlocks?: number;
+    tempBytes?: number;
+  };
   databases: Array<{
     database: string; tableCount: number; totalSize: number;
     dataSize: number; indexSize: number; estimatedRows: number;
@@ -355,7 +362,7 @@ export interface OverviewStats {
 
 export async function getOverviewStats(pool: ConnPool): Promise<OverviewStats> {
   if (isPg(pool)) {
-    const [verRes, upRes, connRes, dbRes] = await Promise.all([
+    const [verRes, upRes, connRes, dbRes, healthRes] = await Promise.all([
       pool.pg!.query<{ version: string }>('SELECT version()'),
       pool.pg!.query<{ uptime: string }>(
         `SELECT EXTRACT(EPOCH FROM (now() - pg_postmaster_start_time()))::int AS uptime`
@@ -365,30 +372,73 @@ export async function getOverviewStats(pool: ConnPool): Promise<OverviewStats> {
                 (SELECT setting::int FROM pg_settings WHERE name='max_connections') AS max
          FROM pg_stat_activity`
       ),
-      pool.pg!.query<{ database: string; tableCount: string; totalSize: string; dataSize: string; indexSize: string; estimatedRows: string }>(
+      pool.pg!.query<{ database: string; totalSize: string; tableCount: string; dataSize: string; indexSize: string; estimatedRows: string }>(
         `SELECT
-           n.nspname AS database,
-           COUNT(c.relname)::int AS "tableCount",
-           COALESCE(SUM(pg_total_relation_size(c.oid)),0)::bigint AS "totalSize",
-           COALESCE(SUM(pg_relation_size(c.oid)),0)::bigint AS "dataSize",
-           COALESCE(SUM(pg_indexes_size(c.oid)),0)::bigint AS "indexSize",
-           COALESCE(SUM(c.reltuples),0)::bigint AS "estimatedRows"
-         FROM pg_class c
-         JOIN pg_namespace n ON n.oid = c.relnamespace
-         WHERE c.relkind = 'r'
-           AND n.nspname NOT IN ('information_schema','pg_catalog','pg_toast')
-           AND n.nspname NOT LIKE 'pg_temp%'
-         GROUP BY n.nspname
+           d.datname AS database,
+           pg_database_size(d.datname)::bigint AS "totalSize",
+           COALESCE((
+             SELECT COUNT(c.relname)::int
+             FROM pg_class c
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE c.relkind = 'r'
+               AND n.nspname NOT IN ('information_schema','pg_catalog','pg_toast')
+               AND n.nspname NOT LIKE 'pg_temp%'
+               AND d.datname = current_database()
+           ), 0) AS "tableCount",
+           COALESCE((
+             SELECT SUM(pg_relation_size(c.oid))::bigint
+             FROM pg_class c
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE c.relkind = 'r'
+               AND n.nspname NOT IN ('information_schema','pg_catalog','pg_toast')
+               AND d.datname = current_database()
+           ), 0) AS "dataSize",
+           COALESCE((
+             SELECT SUM(pg_indexes_size(c.oid))::bigint
+             FROM pg_class c
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE c.relkind = 'r'
+               AND n.nspname NOT IN ('information_schema','pg_catalog','pg_toast')
+               AND d.datname = current_database()
+           ), 0) AS "indexSize",
+           COALESCE((
+             SELECT SUM(c.reltuples)::bigint
+             FROM pg_class c
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE c.relkind = 'r'
+               AND n.nspname NOT IN ('information_schema','pg_catalog','pg_toast')
+               AND d.datname = current_database()
+           ), 0) AS "estimatedRows"
+         FROM pg_database d
+         WHERE d.datistemplate = false
          ORDER BY "totalSize" DESC`
+      ),
+      pool.pg!.query<{ cache_hit_rate: string; xact_commit: string; xact_rollback: string; temp_bytes: string; deadlocks: string }>(
+        `SELECT
+           ROUND(
+             sum(blks_hit) * 100.0 / NULLIF(sum(blks_hit + blks_read), 0),
+             1
+           ) AS cache_hit_rate,
+           sum(xact_commit)::bigint   AS xact_commit,
+           sum(xact_rollback)::bigint AS xact_rollback,
+           sum(temp_bytes)::bigint    AS temp_bytes,
+           sum(deadlocks)::bigint     AS deadlocks
+         FROM pg_stat_database`
       ),
     ]);
     const ver = verRes.rows[0].version.split(' ').slice(0, 2).join(' ');
+    const h = healthRes.rows[0];
     return {
       server: {
         version: ver,
         uptime: parseInt(upRes.rows[0].uptime),
         maxConnections: parseInt(connRes.rows[0].max),
         openConnections: parseInt(connRes.rows[0].total),
+        cacheHitRate: h.cache_hit_rate != null ? parseFloat(h.cache_hit_rate) : undefined,
+        totalCommits: Number(h.xact_commit),
+        totalRollbacks: Number(h.xact_rollback),
+        deadlocks: Number(h.deadlocks),
+        tempBytes: Number(h.temp_bytes),
       },
       databases: dbRes.rows.map(r => ({
         database: r.database,
