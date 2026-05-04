@@ -202,37 +202,53 @@ export default function ERDiagram({ db }: Props) {
           className="w-full h-full select-none"
           onMouseDown={onSvgMouseDown}
         >
+          <defs>
+            <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L6,3 z" fill="#3b82f6" opacity="0.7" />
+            </marker>
+            <marker id="arrow-left" markerWidth="6" markerHeight="6" refX="1" refY="3" orient="auto">
+              <path d="M6,0 L6,6 L0,3 z" fill="#3b82f6" opacity="0.7" />
+            </marker>
+          </defs>
           <g transform={`translate(${pan.x},${pan.y}) scale(${zoom})`}>
             {/* Relation arrows */}
             {relations.map((rel, i) => {
               const fromPos = positions[rel.fromTable];
               const toPos = positions[rel.toTable];
               if (!fromPos || !toPos) return null;
-              const fromY = getColY(rel.fromTable, rel.fromColumn);
-              const toY = getColY(rel.toTable, rel.toColumn);
-              if (fromY === null || toY === null) return null;
-              const x1 = fromPos.x + TABLE_W;
-              const x2 = toPos.x;
+
+              // Use the nearest horizontal edge so arrows never go off-screen.
+              // Previous code always used right→left which breaks the circular layout.
+              const fromCx = fromPos.x + TABLE_W / 2;
+              const toCx = toPos.x + TABLE_W / 2;
+              const toIsRight = toCx >= fromCx;
+              const x1 = toIsRight ? fromPos.x + TABLE_W : fromPos.x;
+              const x2 = toIsRight ? toPos.x : toPos.x + TABLE_W;
+              const cp = Math.min(Math.abs(x2 - x1) * 0.5, 110);
+              const cp1x = toIsRight ? x1 + cp : x1 - cp;
+              const cp2x = toIsRight ? x2 - cp : x2 + cp;
+
+              // Fall back to table midpoint if the specific column isn't found
+              const fromY = getColY(rel.fromTable, rel.fromColumn)
+                ?? (fromPos.y + fromPos.h / 2);
+              const toY = getColY(rel.toTable, rel.toColumn)
+                ?? (toPos.y + toPos.h / 2);
+
               const dim = relatedToHighlighted && !relatedToHighlighted.has(rel.fromTable);
               return (
                 <g key={i}>
                   <path
-                    d={`M ${x1} ${fromY} C ${x1 + 60} ${fromY}, ${x2 - 60} ${toY}, ${x2} ${toY}`}
+                    d={`M ${x1} ${fromY} C ${cp1x} ${fromY}, ${cp2x} ${toY}, ${x2} ${toY}`}
                     fill="none"
                     stroke={dim ? '#27272a' : '#3b82f6'}
                     strokeWidth={dim ? 1 : 1.5}
                     strokeOpacity={dim ? 0.3 : 0.7}
-                    markerEnd="url(#arrow)"
+                    markerEnd={toIsRight ? 'url(#arrow)' : undefined}
+                    markerStart={toIsRight ? undefined : 'url(#arrow-left)'}
                   />
                 </g>
               );
             })}
-
-            <defs>
-              <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-                <path d="M0,0 L0,6 L6,3 z" fill="#3b82f6" opacity="0.7" />
-              </marker>
-            </defs>
 
             {/* Tables */}
             {tables.map(tbl => {
