@@ -16,10 +16,11 @@ export async function GET(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const { id } = await req.json();
-  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
+  const numId = Number(id);
+  if (!id || !Number.isInteger(numId) || numId <= 0) return NextResponse.json({ error: 'id must be a positive integer' }, { status: 400 });
   try {
     const pool = await getConnPool(connId(req));
-    await killProcess(pool, Number(id));
+    await killProcess(pool, numId);
     return NextResponse.json({ ok: true });
   } catch (e: unknown) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });

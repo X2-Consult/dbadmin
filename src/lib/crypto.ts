@@ -5,7 +5,7 @@ const PREFIX_V2 = 'enc2:';
 
 // Fixed salt — uniqueness comes from the random IV per encryption, not the salt
 const PBKDF2_SALT = Buffer.from('dbadmin-connections-v2');
-const PBKDF2_ITER = 200_000;
+const PBKDF2_ITER = 310_000;
 
 function getSecret(): string {
   return process.env.SESSION_SECRET || process.env.UI_PASSWORD || '';

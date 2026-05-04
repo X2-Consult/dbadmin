@@ -6,6 +6,7 @@
 import type { ConnPool } from './connections';
 import type { ResultSetHeader } from 'mysql2';
 import type { QueryResult as PgResult } from 'pg';
+import { escape as mysqlEscape } from 'mysql2';
 
 const isPg = (p: ConnPool) => p.config.type === 'postgres';
 
@@ -14,9 +15,17 @@ function qi(name: string, pg: boolean) {
   return pg ? `"${safe}"` : `\`${safe}\``;
 }
 
+const ALLOWED_PRIVILEGES = new Set([
+  'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'INDEX', 'ALTER',
+  'CREATE TEMPORARY TABLES', 'LOCK TABLES', 'EXECUTE', 'CREATE VIEW', 'SHOW VIEW',
+  'CREATE ROUTINE', 'ALTER ROUTINE', 'EVENT', 'TRIGGER', 'REFERENCES',
+  // PostgreSQL-specific
+  'CONNECT', 'TEMPORARY', 'USAGE',
+]);
+
 function validateGrant(g: string): string {
   const trimmed = g.trim().toUpperCase();
-  if (!/^[A-Z][A-Z ,]*$/.test(trimmed)) throw new Error(`Invalid privilege string: ${g}`);
+  if (!ALLOWED_PRIVILEGES.has(trimmed)) throw new Error(`Privilege not allowed: ${g}`);
   return trimmed;
 }
 
@@ -576,7 +585,7 @@ export async function createUser(
 export async function dropUser(pool: ConnPool, user: string, host: string): Promise<void> {
   assertWritable(pool);
   if (isPg(pool)) {
-    await pool.pg!.query(`DROP USER IF EXISTS "${user.replace(/"/g, '')}"`);
+    await pool.pg!.query(`DROP USER IF EXISTS ${qi(user, true)}`);
   } else {
     await pool.mysql!.execute(`DROP USER ?@?`, [user, host]);
     await pool.mysql!.query('FLUSH PRIVILEGES');
@@ -701,6 +710,7 @@ export async function getProcessList(pool: ConnPool): Promise<ProcessEntry[]> {
 }
 
 export async function killProcess(pool: ConnPool, id: number): Promise<void> {
+  if (!Number.isInteger(id) || id <= 0) throw new Error('Invalid process id');
   if (isPg(pool)) {
     await pool.pg!.query(`SELECT pg_terminate_backend($1)`, [id]);
   } else {
@@ -993,7 +1003,8 @@ export async function alterColumn(
     }
     if (def.defaultVal.trim()) {
       await pool.pg!.query(
-        `ALTER TABLE ${q} ALTER COLUMN ${col} SET DEFAULT '${def.defaultVal.replace(/'/g, "''")}'`
+        `ALTER TABLE ${q} ALTER COLUMN ${col} SET DEFAULT $1`,
+        [def.defaultVal]
       );
     } else {
       await pool.pg!.query(`ALTER TABLE ${q} ALTER COLUMN ${col} DROP DEFAULT`);
@@ -1005,7 +1016,7 @@ export async function alterColumn(
     }
   } else {
     const nn = def.notNull ? ' NOT NULL' : '';
-    const dflt = def.defaultVal.trim() ? ` DEFAULT '${def.defaultVal.replace(/'/g, "\\'")}'` : '';
+    const dflt = def.defaultVal.trim() ? ` DEFAULT ${mysqlEscape(def.defaultVal)}` : '';
     const ai = def.autoIncrement ? ' AUTO_INCREMENT' : '';
     if (def.newName && def.newName !== oldName) {
       await pool.mysql!.query(
