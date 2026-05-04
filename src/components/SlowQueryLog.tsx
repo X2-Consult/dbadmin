@@ -70,8 +70,10 @@ export default function SlowQueryLog() {
       {error && (
         <div className="flex items-center gap-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl p-3 mb-4">
           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-          {error.includes('performance_schema') || error.includes('pg_stat_statements')
-            ? 'Performance schema / pg_stat_statements not available. Enable performance_schema or install the pg_stat_statements extension.'
+          {error.includes('pg_stat_statements')
+            ? 'pg_stat_statements is not enabled. Run: CREATE EXTENSION pg_stat_statements; — and add shared_preload_libraries = \'pg_stat_statements\' to postgresql.conf, then restart PostgreSQL.'
+            : error.includes('performance_schema')
+            ? 'performance_schema is not available. Enable it by adding performance_schema=ON to my.cnf and restarting MySQL/MariaDB.'
             : error}
         </div>
       )}

@@ -1238,25 +1238,21 @@ export interface SlowQuery {
 
 export async function getTopQueries(pool: ConnPool): Promise<SlowQuery[]> {
   if (isPg(pool)) {
-    try {
-      const { rows } = await pool.pg!.query<{
-        query: string; calls: string; mean_exec_time: string;
-        max_exec_time: string; total_exec_time: string;
-      }>(
-        `SELECT query, calls, mean_exec_time, max_exec_time, total_exec_time
-         FROM pg_stat_statements
-         ORDER BY mean_exec_time DESC LIMIT 50`
-      );
-      return rows.map(r => ({
-        query: r.query,
-        calls: Number(r.calls),
-        avgMs: Math.round(Number(r.mean_exec_time)),
-        maxMs: Math.round(Number(r.max_exec_time)),
-        totalMs: Math.round(Number(r.total_exec_time)),
-      }));
-    } catch {
-      return [];
-    }
+    const { rows } = await pool.pg!.query<{
+      query: string; calls: string; mean_exec_time: string;
+      max_exec_time: string; total_exec_time: string;
+    }>(
+      `SELECT query, calls, mean_exec_time, max_exec_time, total_exec_time
+       FROM pg_stat_statements
+       ORDER BY mean_exec_time DESC LIMIT 50`
+    );
+    return rows.map(r => ({
+      query: r.query,
+      calls: Number(r.calls),
+      avgMs: Math.round(Number(r.mean_exec_time)),
+      maxMs: Math.round(Number(r.max_exec_time)),
+      totalMs: Math.round(Number(r.total_exec_time)),
+    }));
   }
   try {
     const [rows] = await pool.mysql!.query(
