@@ -155,20 +155,34 @@ export async function getTableStructure(
   pool: ConnPool, db: string, table: string
 ): Promise<{ columns: ColumnInfo[]; indexes: IndexInfo[]; foreignKeys: FKInfo[] }> {
   if (isPg(pool)) {
+    // Use pg_catalog instead of information_schema.constraint_column_usage:
+    // the information_schema view only shows columns owned by the current role,
+    // so FKs referencing tables owned by a different user return no rows.
+    // pg_catalog has no such ownership filter and correctly handles composite FKs.
     const { rows: fks } = await pool.pg!.query<FKInfo>(
       `SELECT
-         kcu.column_name AS column,
-         ccu.table_name  AS ref_table,
-         ccu.column_name AS ref_column,
-         rc.update_rule  AS on_update,
-         rc.delete_rule  AS on_delete
-       FROM information_schema.key_column_usage kcu
-       JOIN information_schema.referential_constraints rc
-         ON rc.constraint_name = kcu.constraint_name
-        AND rc.constraint_schema = kcu.constraint_schema
-       JOIN information_schema.constraint_column_usage ccu
-         ON ccu.constraint_name = rc.unique_constraint_name
-      WHERE kcu.table_schema = $1 AND kcu.table_name = $2`,
+         a.attname  AS column,
+         tf.relname AS ref_table,
+         af.attname AS ref_column,
+         CASE c.confupdtype
+           WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT'
+           WHEN 'c' THEN 'CASCADE'   WHEN 'n' THEN 'SET NULL'
+           WHEN 'd' THEN 'SET DEFAULT' ELSE 'NO ACTION'
+         END AS on_update,
+         CASE c.confdeltype
+           WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT'
+           WHEN 'c' THEN 'CASCADE'   WHEN 'n' THEN 'SET NULL'
+           WHEN 'd' THEN 'SET DEFAULT' ELSE 'NO ACTION'
+         END AS on_delete
+       FROM pg_constraint c
+       JOIN pg_class t   ON t.oid = c.conrelid
+       JOIN pg_namespace n ON n.oid = t.relnamespace
+       JOIN pg_class tf  ON tf.oid = c.confrelid
+       JOIN LATERAL UNNEST(c.conkey)  WITH ORDINALITY AS k(num, ord)  ON true
+       JOIN pg_attribute a  ON a.attrelid  = c.conrelid  AND a.attnum  = k.num
+       JOIN LATERAL UNNEST(c.confkey) WITH ORDINALITY AS kf(num, ord) ON kf.ord = k.ord
+       JOIN pg_attribute af ON af.attrelid = c.confrelid AND af.attnum = kf.num
+       WHERE c.contype = 'f' AND n.nspname = $1 AND t.relname = $2`,
       [db, table]
     );
     const { rows: cols } = await pool.pg!.query<ColumnInfo>(
