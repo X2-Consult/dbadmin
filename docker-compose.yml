@@ -1,0 +1,22 @@
+services:
+  dbadmin:
+    build: .
+    ports:
+      - "${PORT:-3333}:3333"
+    environment:
+      UI_PASSWORD: ${UI_PASSWORD}
+      SESSION_SECRET: ${SESSION_SECRET}
+      # Optional: pre-configure a default DB connection
+      # DB_HOST: ${DB_HOST}
+      # DB_PORT: ${DB_PORT:-3306}
+      # DB_USER: ${DB_USER}
+      # DB_PASS: ${DB_PASS}
+      # DB_NAME: ${DB_NAME}
+    volumes:
+      - dbadmin-data:/app/data
+      - dbadmin-certs:/app/certs
+    restart: unless-stopped
+
+volumes:
+  dbadmin-data:
+  dbadmin-certs:

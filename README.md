@@ -236,6 +236,59 @@ db.yourdomain.com {
 
 ---
 
+## Docker
+
+### Quick start
+
+```bash
+git clone <repo-url> dbadmin
+cd dbadmin
+
+# Generate a session secret, then create your .env file
+echo "UI_PASSWORD=yourpassword" > .env
+echo "SESSION_SECRET=$(openssl rand -hex 32)" >> .env
+
+docker compose up -d
+```
+
+Open `http://localhost:3333` and sign in with the password you set.
+
+Connection data is persisted in a named Docker volume (`dbadmin-data`) so it survives container restarts and upgrades.
+
+### HTTPS in Docker
+
+Copy your certificate files into the `dbadmin-certs` volume, then restart:
+
+```bash
+docker cp certs/cert.pem $(docker compose ps -q dbadmin):/app/certs/cert.pem
+docker cp certs/key.pem  $(docker compose ps -q dbadmin):/app/certs/key.pem
+docker compose restart dbadmin
+```
+
+Or mount a host directory instead of the named volume by editing `docker-compose.yml`:
+
+```yaml
+volumes:
+  - ./certs:/app/certs
+```
+
+### Custom port
+
+Set `PORT` in your `.env` file:
+
+```env
+PORT=8080
+```
+
+### Updating
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+---
+
 ## Running as a service
 
 ### systemd (Linux)
