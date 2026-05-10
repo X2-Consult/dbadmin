@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Gauge, RefreshCw, Loader2, AlertCircle, Clock, Hash, Info } from 'lucide-react';
+import { Gauge, RefreshCw, Loader2, AlertCircle, Clock, Hash, Info, RotateCcw } from 'lucide-react';
 import { useConn } from '@/context/ConnectionContext';
 
 type Period = 'hour' | 'day' | 'week' | 'all';
@@ -29,6 +29,20 @@ export default function SlowQueryLog() {
   const [sortBy, setSortBy] = useState<keyof SlowQuery>('avgMs');
   const [expanded, setExpanded] = useState<number | null>(null);
   const [period, setPeriod] = useState<Period>('all');
+  const [resetting, setResetting] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+
+  async function resetStats() {
+    setResetting(true);
+    setConfirmReset(false);
+    try {
+      const r = await fetch(`/api/server/slow-queries?conn=${connId}`, { method: 'POST' });
+      const d = await r.json();
+      if (!d.error) load();
+    } finally {
+      setResetting(false);
+    }
+  }
 
   async function load(p = period) {
     setLoading(true);
@@ -82,6 +96,27 @@ export default function SlowQueryLog() {
               ))}
             </div>
           )}
+          {isPg && (
+            confirmReset ? (
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-zinc-400">Reset all stats?</span>
+                <button onClick={resetStats} disabled={resetting}
+                  className="px-2 py-1 rounded-md text-xs bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors">
+                  {resetting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Yes, reset'}
+                </button>
+                <button onClick={() => setConfirmReset(false)}
+                  className="px-2 py-1 rounded-md text-xs text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors">
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmReset(true)}
+                title="Reset pg_stat_statements"
+                className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors">
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            )
+          )}
           <button onClick={() => load()} className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors">
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
@@ -91,7 +126,7 @@ export default function SlowQueryLog() {
       {isPg && (
         <div className="flex items-start gap-2 text-xs text-zinc-500 bg-zinc-800/40 border border-zinc-700/50 rounded-lg px-3 py-2 mb-4">
           <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-zinc-600" />
-          pg_stat_statements accumulates since last reset — time filtering is not available. Use <code className="text-zinc-400">SELECT pg_stat_statements_reset();</code> to clear and start fresh.
+          pg_stat_statements accumulates since last reset — time filtering is not available. Use the reset button above to clear stats and start fresh.
         </div>
       )}
 

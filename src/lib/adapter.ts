@@ -1236,8 +1236,16 @@ export interface SlowQuery {
   totalMs: number;
 }
 
-export async function getTopQueries(pool: ConnPool): Promise<SlowQuery[]> {
+export type QueryPeriod = 'hour' | 'day' | 'week' | 'all';
+
+export async function resetQueryStats(pool: ConnPool): Promise<void> {
+  if (!isPg(pool)) throw new Error('Reset is only supported for PostgreSQL');
+  await pool.pg!.query('SELECT pg_stat_statements_reset()');
+}
+
+export async function getTopQueries(pool: ConnPool, period: QueryPeriod = 'all'): Promise<SlowQuery[]> {
   if (isPg(pool)) {
+    // pg_stat_statements has no per-query timestamps — always cumulative since last reset
     const { rows } = await pool.pg!.query<{
       query: string; calls: string; mean_exec_time: string;
       max_exec_time: string; total_exec_time: string;
@@ -1254,6 +1262,12 @@ export async function getTopQueries(pool: ConnPool): Promise<SlowQuery[]> {
       totalMs: Math.round(Number(r.total_exec_time)),
     }));
   }
+  const intervalSql: Record<QueryPeriod, string> = {
+    hour: `AND LAST_SEEN >= NOW() - INTERVAL 1 HOUR`,
+    day:  `AND LAST_SEEN >= NOW() - INTERVAL 1 DAY`,
+    week: `AND LAST_SEEN >= NOW() - INTERVAL 7 DAY`,
+    all:  '',
+  };
   try {
     const [rows] = await pool.mysql!.query(
       `SELECT DIGEST_TEXT AS query,
@@ -1262,7 +1276,7 @@ export async function getTopQueries(pool: ConnPool): Promise<SlowQuery[]> {
               ROUND(MAX_TIMER_WAIT / 1000000000, 2) AS maxMs,
               ROUND(SUM_TIMER_WAIT / 1000000000, 2) AS totalMs
        FROM performance_schema.events_statements_summary_by_digest
-       WHERE DIGEST_TEXT IS NOT NULL
+       WHERE DIGEST_TEXT IS NOT NULL ${intervalSql[period]}
        ORDER BY AVG_TIMER_WAIT DESC LIMIT 50`
     ) as [Array<{ query: string; calls: number; avgMs: number; maxMs: number; totalMs: number }>, unknown];
     return rows.map(r => ({
