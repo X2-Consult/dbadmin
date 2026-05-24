@@ -314,6 +314,20 @@ export default function SlowQueryLog() {
                       <span>Calls: <span className="text-zinc-300">{q.calls.toLocaleString()}</span></span>
                       <span>Total: <span className="text-zinc-300">{q.totalMs.toLocaleString()}ms</span></span>
                     </div>
+                    {matched.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-zinc-800">
+                        <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                          <Filter className="w-3 h-3" />Matched noise patterns
+                        </p>
+                        <ul className="space-y-0.5">
+                          {matched.map((label, j) => (
+                            <li key={j} className="flex items-center gap-1.5 text-xs text-zinc-400">
+                              <span className="text-zinc-600">·</span>{label}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
