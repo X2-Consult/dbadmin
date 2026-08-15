@@ -56,6 +56,9 @@ fi
 # ─── Build ──────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${B}Building…${N}"
+# Force a clean build — Next's incremental cache has been seen to keep serving
+# a stale compiled chunk after a source change, silently skipping the update.
+rm -rf .next
 if ! npm run build; then
   echo ""
   fail "Build failed — the old version is still running. Fix the error and try again."
