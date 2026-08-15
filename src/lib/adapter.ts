@@ -1240,19 +1240,29 @@ export type QueryPeriod = 'hour' | 'day' | 'week' | 'all';
 
 export async function resetQueryStats(pool: ConnPool): Promise<void> {
   if (!isPg(pool)) throw new Error('Reset is only supported for PostgreSQL');
-  await pool.pg!.query('SELECT pg_stat_statements_reset()');
+  // Scope the reset to this connection's database — pg_stat_statements_reset()
+  // called with no args wipes stats for every database on the server. Passing
+  // dbid (with userid/queryid wildcarded to 0) resets only this database's rows.
+  await pool.pg!.query(
+    `SELECT pg_stat_statements_reset(0, (SELECT oid FROM pg_database WHERE datname = current_database()), 0)`
+  );
 }
 
 export async function getTopQueries(pool: ConnPool, period: QueryPeriod = 'all'): Promise<SlowQuery[]> {
   if (isPg(pool)) {
-    // pg_stat_statements has no per-query timestamps — always cumulative since last reset
+    // pg_stat_statements is cluster-wide (keyed by dbid), so it must be joined
+    // against pg_database and filtered to this connection's own database —
+    // otherwise every database on the server would show identical stats.
+    // It also has no per-query timestamps — always cumulative since last reset.
     const { rows } = await pool.pg!.query<{
       query: string; calls: string; mean_exec_time: string;
       max_exec_time: string; total_exec_time: string;
     }>(
-      `SELECT query, calls, mean_exec_time, max_exec_time, total_exec_time
-       FROM pg_stat_statements
-       ORDER BY mean_exec_time DESC LIMIT 50`
+      `SELECT s.query, s.calls, s.mean_exec_time, s.max_exec_time, s.total_exec_time
+       FROM pg_stat_statements s
+       JOIN pg_database d ON d.oid = s.dbid
+       WHERE d.datname = current_database()
+       ORDER BY s.mean_exec_time DESC LIMIT 50`
     );
     return rows.map(r => ({
       query: r.query,
