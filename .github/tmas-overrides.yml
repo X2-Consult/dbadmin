@@ -10,3 +10,14 @@ secrets:
     - patterns:
         - \.md$
       reason: Documentation — .env examples use placeholders (your-password-here, yourpassword, <64-char hex string>); real .env files are gitignored
+
+# Accepted risk (2026-10-27). Rules pin the exact package version, so they stop
+# matching — and the finding comes back for review — as soon as the version changes.
+vulnerabilities:
+  - rule:
+      vulnerability: GHSA-x4vx-rjvf-j5p4
+      package:
+        name: dompurify
+        version: 3.4.17
+        type: npm
+    reason: Low severity, no fixed release exists (fix-state not-fixed). Pulled in by monaco-editor to sanitise its own hover/markdown widgets; dbadmin never passes user HTML through it
