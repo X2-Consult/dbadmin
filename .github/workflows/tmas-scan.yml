@@ -1,0 +1,39 @@
+# Trend Micro Artifact Scanner (TMAS) — open-source vulnerability + secrets scan
+# of the whole repo. Requires repo secret TMAS_API_KEY (Vision One API key with
+# artifact-scan permission). Report-only for now: add --evaluatePolicy to
+# additionalArgs once the baseline is triaged to fail builds on policy violations.
+name: TMAS Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 18 * * 0'   # weekly (Mon 6–7am NZ) — catches new CVEs in unchanged deps
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  tmas-scan:
+    name: TMAS Repo Scan
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: dbadmin
+
+      - name: TMAS vulnerability + secrets scan
+        uses: trendmicro/tmas-scan-action@2ab9b93e06d1263d20e7e26418f34cbd77a42003 # v3.3.1 (no floating major tag is published)
+        with:
+          version: '2'
+          vulnerabilitiesScan: true
+          secretsScan: true
+          malwareScan: false
+          artifact: dir:./dbadmin
+          additionalArgs: --region=ap-southeast-2 --override=./dbadmin/.github/tmas-overrides.yml
+          tmasApiKey: ${{ secrets.TMAS_API_KEY }}
+          githubToken: ${{ secrets.GITHUB_TOKEN }}

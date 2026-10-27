@@ -1,0 +1,12 @@
+# TMAS finding overrides — passed to the scan via --override in
+# .github/workflows/tmas-scan.yml. Patterns are regexes matched against the
+# finding's path (absolute on the runner, e.g. /home/runner/work/.../dbadmin/x),
+# so keep them unanchored at the start. Every entry needs a reason.
+secrets:
+  paths:
+    - patterns:
+        - /\.github/tmas-overrides\.yml$
+      reason: This file — only path patterns and reasons, which describe the suppressed false positives
+    - patterns:
+        - \.md$
+      reason: Documentation — .env examples use placeholders (your-password-here, yourpassword, <64-char hex string>); real .env files are gitignored
