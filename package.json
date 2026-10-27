@@ -1,5 +1,5 @@
 {
-  "name": "phpmyadmin",
+  "name": "dbadmin",
   "version": "0.1.0",
   "private": true,
   "scripts": {
